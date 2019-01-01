@@ -71,42 +71,127 @@ fn new_game() -> Game {
     game
 }
 
-fn init_game(game: &mut Game) {
-    game.board[21] = ROOK | BLACK;
-    game.board[22] = KNIGHT | BLACK;
-    game.board[23] = BISHOP | BLACK;
-    game.board[24] = QUEEN | BLACK;
-    game.board[25] = KING | BLACK;
-    game.board[26] = BISHOP | BLACK;
-    game.board[27] = KNIGHT | BLACK;
-    game.board[28] = ROOK | BLACK;
-    game.board[31] = PAWN | BLACK;
-    game.board[32] = PAWN | BLACK;
-    game.board[33] = PAWN | BLACK;
-    game.board[34] = PAWN | BLACK;
-    game.board[35] = PAWN | BLACK;
-    game.board[36] = PAWN | BLACK;
-    game.board[37] = PAWN | BLACK;
-    game.board[38] = PAWN | BLACK;
-    game.board[81] = PAWN | WHITE;
-    game.board[82] = PAWN | WHITE;
-    game.board[83] = PAWN | WHITE;
-    game.board[84] = PAWN | WHITE;
-    game.board[85] = PAWN | WHITE;
-    game.board[86] = PAWN | WHITE;
-    game.board[87] = PAWN | WHITE;
-    game.board[88] = PAWN | WHITE;
-    game.board[91] = ROOK | WHITE;
-    game.board[92] = KNIGHT | WHITE;
-    game.board[93] = BISHOP | WHITE;
-    game.board[94] = QUEEN | WHITE;
-    game.board[95] = KING | WHITE;
-    game.board[96] = BISHOP | WHITE;
-    game.board[97] = KNIGHT | WHITE;
-    game.board[98] = ROOK | WHITE;
-    game.state = 0 << 24 | 0 << 16 | (CASTLING_QUEEN_WHITE | CASTLING_KING_WHITE | CASTLING_QUEEN_BLACK | CASTLING_KING_BLACK) << 8 | WHITE;
-    game.king_black = 25;
-    game.king_white = 95;
+fn algebraic_to_pos(s: &str) -> Option<usize> {
+    let mut iter = s.chars();
+    let c = match iter.next() {
+        Option::Some(c) => {
+            match c.to_digit(18) {
+                Option::Some(v) => {
+                    if v < 10 {
+                        return Option::None
+                    }
+                    (v - 10) as usize
+                },
+                Option::None => return Option::None
+            }
+        },
+        Option::None => return Option::None
+    };
+    let r = match iter.next() {
+        Option::Some(c) => {
+            match c.to_digit(10) {
+                Option::Some(v) => (8 - v) as usize,
+                Option::None => return Option::None
+            }
+        },
+        Option::None => return Option::None
+    };
+    match iter.next() {
+        Option::Some(_) => Option::None,
+        Option::None => Option::Some(8 * r + c)
+    }
+}
+
+const PIECE_ASCII: &str = " PBNRQKpbnrqk";
+const PIECE_VALUES: [usize; 13] = [
+    EMPTY,
+    WHITE | PAWN, WHITE | BISHOP, WHITE | KNIGHT, WHITE | ROOK, WHITE | QUEEN, WHITE | KING,
+    BLACK | PAWN, BLACK | BISHOP, BLACK | KNIGHT, BLACK | ROOK, BLACK | QUEEN, BLACK | KING
+];
+
+fn init_game(fen: &str) -> Result<Game, &str> {
+    let mut iter = fen.split_whitespace();
+    let mut game = new_game();
+    match iter.next() {
+        Some(s) => {
+            let mut pos: usize = 0;
+            for c in s.chars() {
+                if c == '/' {
+                    continue;
+                }
+                match c.to_digit(10) {
+                    Option::Some(n) => {
+                        pos += n as usize;
+                        continue;
+                    },
+                    Option::None => {}
+                };
+                match PIECE_ASCII.find(c) {
+                    Option::Some(idx) => {
+                        game.board[MAILBOX[pos]] = PIECE_VALUES[idx];
+                        pos += 1;
+                    },
+                    Option::None => return Result::Err("Illegal FEN character")
+                };
+            }
+        },
+        None => return Result::Err("Empty FEN")
+    };
+    let side = match iter.next() {
+        Some(s) => match &s.to_lowercase()[..] {
+            "w" => WHITE,
+            "b" => BLACK,
+            _ => return Result::Err("Illegal side string")
+        },
+        None => return Result::Err("Missing side")
+    };
+    let mut castling: usize = 0;
+    match iter.next() {
+        Some(s) => {
+            for c in s.chars() {
+                match c {
+                    'K' => castling = castling | CASTLING_KING_WHITE,
+                    'Q' => castling = castling | CASTLING_QUEEN_WHITE,
+                    'k' => castling = castling | CASTLING_KING_BLACK,
+                    'q' => castling = castling | CASTLING_QUEEN_BLACK,
+                    _ => return Result::Err("Illegal castling character")
+                }
+            }
+        },
+        None => {}
+    };
+    let ep = match iter.next() {
+        Some(s) => match s {
+            "-" => 0,
+            _ => match algebraic_to_pos(s) {
+                Some(p) => MAILBOX[p],
+                None => return Result::Err("Illegal en passant string")
+            }
+        },
+        None => 0
+    };
+    let draw_ply = match iter.next() {
+        Some(s) => match s.parse::<usize>() {
+            Ok(v) => {
+                if v >= 100 {
+                   return Result::Err("Illegal ply value"); 
+                }
+                v
+            },
+            Err(_) => return Result::Err("Illegal ply format")
+        },
+        None => 0
+    };
+    game.state = draw_ply << 24 | ep << 16 | castling << 8 | side;
+    game.king_white = match game.board.iter().position(|&p| p == WHITE | KING) {
+        Some(i) => i,
+        None => return Result::Err("No white king")
+    };
+    game.king_black = match game.board.iter().position(|&p| p == BLACK | KING) {
+        Some(i) => i,
+        None => return Result::Err("No black king")
+    };
+    return Result::Ok(game);
 }
 
 const BISHOP_MOVEMENTS: [isize; 4] = [-11, -9, 9, 11];
@@ -457,17 +542,13 @@ fn perft_sub(game: &mut Game, depth: usize) -> usize {
     result
 }
 
-fn perft(depth: usize) -> usize {
-    let mut game = new_game();
-    init_game(&mut game);
-
-    let result = perft_sub(&mut game, depth);
-
-    result
+fn perft(fen: &str, depth: usize) -> usize {
+    match init_game(fen) {
+        Ok(mut game) => perft_sub(&mut game, depth),
+        Err(_) => 0
+    }
 }
 
 fn main() {
-    let count = perft(6);
-
-    println!("Perft: {}", count);
+    println!("Perft: {}", perft("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8", 4));
 }
