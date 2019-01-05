@@ -272,12 +272,13 @@ mod board {
         });
     }
 
-    pub fn generate_moves(game: &Game, move_list: &mut Vec<Move>) {
+    pub fn generate_moves(game: &Game) -> Vec<Move> {
         let side = game.state & 0xff;
         let xside = if side == WHITE { BLACK } else { WHITE };
         let castling = (game.state >> 8) & 0xff;
         let ep = (game.state >> 16) & 0xff;
 
+        let mut move_list = Vec::with_capacity(218);
         for i in 0..64 {
             let from = MAILBOX[i];
             let piece = game.board[from];
@@ -287,51 +288,51 @@ mod board {
                     if side == WHITE {
                         if i >> 3 == 1 {
                             if game.board[from - 10] == EMPTY {
-                                add_promotion(move_list, from, from - 10, WHITE);
+                                add_promotion(&mut move_list, from, from - 10, WHITE);
                             }
                             if game.board[from - 11] & COLOR_MASK == BLACK {
-                                add_promotion(move_list, from, from - 11, WHITE);
+                                add_promotion(&mut move_list, from, from - 11, WHITE);
                             }
                             if game.board[from - 9] & COLOR_MASK == BLACK {
-                                add_promotion(move_list, from, from - 9, WHITE);
+                                add_promotion(&mut move_list, from, from - 9, WHITE);
                             }
                         } else {
                             if game.board[from - 10] == EMPTY {
-                                add_move(move_list, from, from - 10);
+                                add_move(&mut move_list, from, from - 10);
                                 if i >> 3 == 6 && game.board[from - 20] == EMPTY {
-                                    add_move(move_list, from, from - 20);
+                                    add_move(&mut move_list, from, from - 20);
                                 }
                             }
                             if game.board[from - 11] & COLOR_MASK == BLACK || from - 11 == ep {
-                                add_move(move_list, from, from - 11);
+                                add_move(&mut move_list, from, from - 11);
                             }
                             if game.board[from - 9] & COLOR_MASK == BLACK || from - 9 == ep {
-                                add_move(move_list, from, from - 9);
+                                add_move(&mut move_list, from, from - 9);
                             }
                         }
                     } else {  // side == BLACK
                         if i >> 3 == 6 {
                             if game.board[from + 10] == EMPTY {
-                                add_promotion(move_list, from, from + 10, BLACK);
+                                add_promotion(&mut move_list, from, from + 10, BLACK);
                             }
                             if game.board[from + 11] & COLOR_MASK == WHITE {
-                                add_promotion(move_list, from, from + 11, BLACK);
+                                add_promotion(&mut move_list, from, from + 11, BLACK);
                             }
                             if game.board[from + 9] & COLOR_MASK == WHITE {
-                                add_promotion(move_list, from, from + 9, BLACK);
+                                add_promotion(&mut move_list, from, from + 9, BLACK);
                             }
                         } else {
                             if game.board[from + 10] == EMPTY {
-                                add_move(move_list, from, from + 10);
+                                add_move(&mut move_list, from, from + 10);
                                 if i >> 3 == 1 && game.board[from + 20] == EMPTY {
-                                    add_move(move_list, from, from + 20);
+                                    add_move(&mut move_list, from, from + 20);
                                 }
                             }
                             if game.board[from + 11] & COLOR_MASK == WHITE || from + 11 == ep {
-                                add_move(move_list, from, from + 11);
+                                add_move(&mut move_list, from, from + 11);
                             }
                             if game.board[from + 9] & COLOR_MASK == WHITE || from + 9 == ep {
-                                add_move(move_list, from, from + 9);
+                                add_move(&mut move_list, from, from + 9);
                             }
                         }
                     }
@@ -339,40 +340,40 @@ mod board {
                     for delta in BISHOP_MOVEMENTS.iter() {
                         let mut to = ((from as isize) + delta) as usize;
                         while game.board[to] == EMPTY {
-                            add_move(move_list, from, to);
+                            add_move(&mut move_list, from, to);
                             to = ((to as isize) + delta) as usize;
                         }
                         if game.board[to] & COLOR_MASK == xside {
-                            add_move(move_list, from, to);
+                            add_move(&mut move_list, from, to);
                         }
                     }
                 } else if base_piece == KNIGHT {
                     for delta in KNIGHT_MOVEMENTS.iter() {
                         let to = ((from as isize) + delta) as usize;
                         if game.board[to] == EMPTY || game.board[to] & COLOR_MASK == xside {
-                            add_move(move_list, from, to);
+                            add_move(&mut move_list, from, to);
                         }
                     }
                 } else if base_piece == ROOK {
                     for delta in ROOK_MOVEMENTS.iter() {
                         let mut to = ((from as isize) + delta) as usize;
                         while game.board[to] == EMPTY {
-                            add_move(move_list, from, to);
+                            add_move(&mut move_list, from, to);
                             to = ((to as isize) + delta) as usize;
                         }
                         if game.board[to] & COLOR_MASK == xside {
-                            add_move(move_list, from, to);
+                            add_move(&mut move_list, from, to);
                         }
                     }
                 } else if base_piece == QUEEN {
                     for delta in KING_MOVEMENTS.iter() {
                         let mut to = ((from as isize) + delta) as usize;
                         while game.board[to] == EMPTY {
-                            add_move(move_list, from, to);
+                            add_move(&mut move_list, from, to);
                             to = ((to as isize) + delta) as usize;
                         }
                         if game.board[to] & COLOR_MASK == xside {
-                            add_move(move_list, from, to);
+                            add_move(&mut move_list, from, to);
                         }
                     }
                 } else if base_piece == KING {
@@ -381,35 +382,36 @@ mod board {
                         if (castling & CASTLING_QUEEN_WHITE) != 0
                                 && game.board[94] == EMPTY && game.board[93] == EMPTY && game.board[92] == EMPTY
                                 && !is_attacked_by(game, 94, BLACK) {
-                            add_move(move_list, 95, 93);
+                            add_move(&mut move_list, 95, 93);
                         }
                         if (castling & CASTLING_KING_WHITE) != 0
                                 && game.board[96] == EMPTY && game.board[97] == EMPTY
                                 && !is_attacked_by(game, 96, BLACK) {
-                            add_move(move_list, 95, 97);
+                            add_move(&mut move_list, 95, 97);
                         }
                     } else if from == 25 && (castling & (CASTLING_QUEEN_BLACK | CASTLING_KING_BLACK)) != 0
                             && !is_attacked_by(game, 25, WHITE) {
                         if (castling & CASTLING_QUEEN_BLACK) != 0
                                 && game.board[24] == EMPTY && game.board[23] == EMPTY && game.board[22] == EMPTY
                                 && !is_attacked_by(game, 24, WHITE) {
-                            add_move(move_list, 25, 23);
+                            add_move(&mut move_list, 25, 23);
                         }
                         if (castling & CASTLING_KING_BLACK) != 0
                                 && game.board[26] == EMPTY && game.board[27] == EMPTY
                                 && !is_attacked_by(game, 26, WHITE) {
-                            add_move(move_list, 25, 27);
+                            add_move(&mut move_list, 25, 27);
                         }
                 }
                     for delta in KING_MOVEMENTS.iter() {
                         let to = ((from as isize) + delta) as usize;
                         if game.board[to] == EMPTY || game.board[to] & COLOR_MASK == xside {
-                            add_move(move_list, from, to);
+                            add_move(&mut move_list, from, to);
                         }
                     }
                 }
             }
         }
+        move_list
     }
 
     pub fn make_move(game: &mut Game, mv: &Move) -> Option<UnMove> {
@@ -535,8 +537,7 @@ mod perft {
             return 1;
         }
 
-        let mut move_list = Vec::with_capacity(218);
-        generate_moves(game, &mut move_list);
+        let move_list = generate_moves(game);
 
         let mut result = 0;
         for mv in &move_list {
@@ -630,8 +631,8 @@ mod perft {
 }
 
 fn main() {
-    println!("Initial position {}", perft::perft("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0", 4));
-    println!("Kiwipete {}", perft::perft("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -", 3));
-    println!("Position 3 {}", perft::perft("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - -", 4));
-    println!("Position 6 {}", perft::perft("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10", 3));
+    println!("Initial position {}", perft::perft("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0", 6));
+    println!("Kiwipete {}", perft::perft("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -", 5));
+    println!("Position 3 {}", perft::perft("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - -", 7));
+    println!("Position 6 {}", perft::perft("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10", 5));
 }
