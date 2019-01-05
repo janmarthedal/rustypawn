@@ -1,3 +1,5 @@
+use std::io;
+
 mod board {
     const EMPTY: usize = 0;
     const PAWN: usize = 1;
@@ -31,10 +33,6 @@ mod board {
         0,  0,  0,  0,  0,  0,  0,  0,  0, 0,
     ];
 
-    // const MAX_SEARCH_DEPTH: usize = 32;
-    // const MAX_MOVES_PER_POSITION: usize = 218;
-
-    // #[derive(Copy, Clone)]
     pub struct Move {
         m: usize,  // promoted << 16 | to << 8 | from
     }
@@ -637,8 +635,19 @@ mod perft {
 }
 
 fn main() {
-    println!("Initial position {}", perft::perft("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0", 6));
-    println!("Kiwipete {}", perft::perft("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -", 5));
-    println!("Position 3 {}", perft::perft("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - -", 7));
-    println!("Position 6 {}", perft::perft("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10", 5));
+    println!("Initial position {}", perft::perft("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0", 1));
+    // println!("Kiwipete {}", perft::perft("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -", 5));
+    // println!("Position 3 {}", perft::perft("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - -", 7));
+    // println!("Position 6 {}", perft::perft("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10", 5));*/
+    let mut input = String::new();
+    loop {
+        match io::stdin().read_line(&mut input) {
+            Ok(0) => break,
+            Ok(_) => {
+                let cmd = input.trim();
+                println!("{}", cmd);
+            }
+            Err(error) => panic!("error: {}", error),
+        }
+    }
 }
