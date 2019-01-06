@@ -54,20 +54,16 @@ const MAILBOX: [usize; 64] = [
     91, 92, 93, 94, 95, 96, 97, 98
 ];
 
-impl Game {
-    fn new() -> Game {
-        let mut game = Game {
-            board: [OFF_BOARD; 120],
-            state: 0,
-            king_white: 0,
-            king_black: 0,
-        };
-        for i in 0..64 {
-            game.board[MAILBOX[i]] = EMPTY;
-        }
-        game
-    }
-}
+const PIECE_ASCII: &str = " PBNRQKpbnrqk";
+const PIECE_VALUES: [usize; 13] = [
+    EMPTY,
+    WHITE | PAWN, WHITE | BISHOP, WHITE | KNIGHT, WHITE | ROOK, WHITE | QUEEN, WHITE | KING,
+    BLACK | PAWN, BLACK | BISHOP, BLACK | KNIGHT, BLACK | ROOK, BLACK | QUEEN, BLACK | KING
+];
+const BISHOP_MOVEMENTS: [isize; 4] = [-11, -9, 9, 11];
+const KNIGHT_MOVEMENTS: [isize; 8] = [-21, -19, -12, -8, 8, 12, 19, 21];
+const ROOK_MOVEMENTS: [isize; 4] = [-1, 1, -10, 10];
+const KING_MOVEMENTS: [isize; 8] = [-1, 1, -10, 10, -11, -9, 9, 11];
 
 fn algebraic_to_pos(s: &str) -> Option<usize> {
     let mut iter = s.chars();
@@ -100,153 +96,6 @@ fn algebraic_to_pos(s: &str) -> Option<usize> {
     }
 }
 
-const PIECE_ASCII: &str = " PBNRQKpbnrqk";
-const PIECE_VALUES: [usize; 13] = [
-    EMPTY,
-    WHITE | PAWN, WHITE | BISHOP, WHITE | KNIGHT, WHITE | ROOK, WHITE | QUEEN, WHITE | KING,
-    BLACK | PAWN, BLACK | BISHOP, BLACK | KNIGHT, BLACK | ROOK, BLACK | QUEEN, BLACK | KING
-];
-
-pub fn init_game(fen: &str) -> Result<Game, &str> {
-    let mut iter = fen.split_whitespace();
-    let mut game = Game::new();
-    match iter.next() {
-        Some(s) => {
-            let mut pos: usize = 0;
-            for c in s.chars() {
-                if c == '/' {
-                    continue;
-                }
-                match c.to_digit(10) {
-                    Option::Some(n) => {
-                        pos += n as usize;
-                        continue;
-                    },
-                    Option::None => {}
-                };
-                match PIECE_ASCII.find(c) {
-                    Option::Some(idx) => {
-                        game.board[MAILBOX[pos]] = PIECE_VALUES[idx];
-                        pos += 1;
-                    },
-                    Option::None => return Result::Err("Illegal FEN character")
-                };
-            }
-        },
-        None => return Result::Err("Empty FEN")
-    };
-    let side = match iter.next() {
-        Some(s) => match &s.to_lowercase()[..] {
-            "w" => WHITE,
-            "b" => BLACK,
-            _ => return Result::Err("Illegal side string")
-        },
-        None => return Result::Err("Missing side")
-    };
-    let mut castling: usize = 0;
-    match iter.next() {
-        Some(s) => {
-            for c in s.chars() {
-                match c {
-                    'K' => castling = castling | CASTLING_KING_WHITE,
-                    'Q' => castling = castling | CASTLING_QUEEN_WHITE,
-                    'k' => castling = castling | CASTLING_KING_BLACK,
-                    'q' => castling = castling | CASTLING_QUEEN_BLACK,
-                    '-' => continue,
-                    _ => return Result::Err("Illegal castling character")
-                }
-            }
-        },
-        None => {}
-    };
-    let ep = match iter.next() {
-        Some(s) => match s {
-            "-" => 0,
-            _ => match algebraic_to_pos(s) {
-                Some(p) => MAILBOX[p],
-                None => return Result::Err("Illegal en passant string")
-            }
-        },
-        None => 0
-    };
-    let draw_ply = match iter.next() {
-        Some(s) => match s.parse::<usize>() {
-            Ok(v) => {
-                if v >= 100 {
-                return Result::Err("Illegal ply value"); 
-                }
-                v
-            },
-            Err(_) => return Result::Err("Illegal ply format")
-        },
-        None => 0
-    };
-    game.state = draw_ply << 24 | ep << 16 | castling << 8 | side;
-    game.king_white = match game.board.iter().position(|&p| p == WHITE | KING) {
-        Some(i) => i,
-        None => return Result::Err("No white king")
-    };
-    game.king_black = match game.board.iter().position(|&p| p == BLACK | KING) {
-        Some(i) => i,
-        None => return Result::Err("No black king")
-    };
-    return Result::Ok(game);
-}
-
-const BISHOP_MOVEMENTS: [isize; 4] = [-11, -9, 9, 11];
-const KNIGHT_MOVEMENTS: [isize; 8] = [-21, -19, -12, -8, 8, 12, 19, 21];
-const ROOK_MOVEMENTS: [isize; 4] = [-1, 1, -10, 10];
-const KING_MOVEMENTS: [isize; 8] = [-1, 1, -10, 10, -11, -9, 9, 11];
-
-fn is_attacked_by(game: &Game, pos: usize, color: usize) -> bool {
-    if color == WHITE {
-        if game.board[pos + 9] == (PAWN | WHITE) || game.board[pos + 11] == (PAWN | WHITE) {
-            return true;
-        }
-    } else {
-        if game.board[pos - 9] == (PAWN | BLACK) || game.board[pos - 11] == (PAWN | BLACK) {
-            return true;
-        }
-    }
-    for delta in BISHOP_MOVEMENTS.iter() {
-        let mut to = ((pos as isize) + delta) as usize;
-        while game.board[to] == EMPTY {
-            to = ((to as isize) + delta) as usize;
-        }
-        if game.board[to] == BISHOP | color {
-            return true;
-        }
-    }
-    for delta in KNIGHT_MOVEMENTS.iter() {
-        if game.board[((pos as isize) + delta) as usize] == KNIGHT | color {
-            return true;
-        }
-    }
-    for delta in ROOK_MOVEMENTS.iter() {
-        let mut to = ((pos as isize) + delta) as usize;
-        while game.board[to] == EMPTY {
-            to = ((to as isize) + delta) as usize;
-        }
-        if game.board[to] == ROOK | color {
-            return true;
-        }
-    }
-    for delta in KING_MOVEMENTS.iter() {
-        let mut to = ((pos as isize) + delta) as usize;
-        while game.board[to] == EMPTY {
-            to = ((to as isize) + delta) as usize;
-        }
-        if game.board[to] == QUEEN | color {
-            return true;
-        }
-    }
-    for delta in KING_MOVEMENTS.iter() {
-        if game.board[((pos as isize) + delta) as usize] == KING | color {
-            return true;
-        }
-    }
-    return false;
-}
 
 fn add_move(move_list: &mut Vec<Move>, from: usize, to: usize) {
     move_list.push(Move {
@@ -269,259 +118,412 @@ fn add_promotion(move_list: &mut Vec<Move>, from: usize, to: usize, side: usize)
     });
 }
 
-pub fn generate_moves(game: &Game) -> Vec<Move> {
-    let side = game.state & 0xff;
-    let xside = if side == WHITE { BLACK } else { WHITE };
-    let castling = (game.state >> 8) & 0xff;
-    let ep = (game.state >> 16) & 0xff;
+impl Game {
 
-    let mut move_list = Vec::with_capacity(218);
-    for i in 0..64 {
-        let from = MAILBOX[i];
-        let piece = game.board[from];
-        if piece & COLOR_MASK == side {
-            match piece & PIECE_MASK {
-                PAWN if side == WHITE => {
-                    if i >> 3 == 1 {
-                        if game.board[from - 10] == EMPTY {
-                            add_promotion(&mut move_list, from, from - 10, WHITE);
-                        }
-                        if game.board[from - 11] & COLOR_MASK == BLACK {
-                            add_promotion(&mut move_list, from, from - 11, WHITE);
-                        }
-                        if game.board[from - 9] & COLOR_MASK == BLACK {
-                            add_promotion(&mut move_list, from, from - 9, WHITE);
-                        }
-                    } else {
-                        if game.board[from - 10] == EMPTY {
-                            add_move(&mut move_list, from, from - 10);
-                            if i >> 3 == 6 && game.board[from - 20] == EMPTY {
-                                add_move(&mut move_list, from, from - 20);
+    fn new() -> Game {
+        let mut game = Game {
+            board: [OFF_BOARD; 120],
+            state: 0,
+            king_white: 0,
+            king_black: 0,
+        };
+        for i in 0..64 {
+            game.board[MAILBOX[i]] = EMPTY;
+        }
+        game
+    }
+
+    pub fn from_fen(fen: &str) -> Result<Game, &str> {
+        let mut iter = fen.split_whitespace();
+        let mut game = Game::new();
+        match iter.next() {
+            Some(s) => {
+                let mut pos: usize = 0;
+                for c in s.chars() {
+                    if c == '/' {
+                        continue;
+                    }
+                    match c.to_digit(10) {
+                        Option::Some(n) => {
+                            pos += n as usize;
+                            continue;
+                        },
+                        Option::None => {}
+                    };
+                    match PIECE_ASCII.find(c) {
+                        Option::Some(idx) => {
+                            game.board[MAILBOX[pos]] = PIECE_VALUES[idx];
+                            pos += 1;
+                        },
+                        Option::None => return Result::Err("Illegal FEN character")
+                    };
+                }
+            },
+            None => return Result::Err("Empty FEN")
+        };
+        let side = match iter.next() {
+            Some(s) => match &s.to_lowercase()[..] {
+                "w" => WHITE,
+                "b" => BLACK,
+                _ => return Result::Err("Illegal side string")
+            },
+            None => return Result::Err("Missing side")
+        };
+        let mut castling: usize = 0;
+        match iter.next() {
+            Some(s) => {
+                for c in s.chars() {
+                    match c {
+                        'K' => castling = castling | CASTLING_KING_WHITE,
+                        'Q' => castling = castling | CASTLING_QUEEN_WHITE,
+                        'k' => castling = castling | CASTLING_KING_BLACK,
+                        'q' => castling = castling | CASTLING_QUEEN_BLACK,
+                        '-' => continue,
+                        _ => return Result::Err("Illegal castling character")
+                    }
+                }
+            },
+            None => {}
+        };
+        let ep = match iter.next() {
+            Some(s) => match s {
+                "-" => 0,
+                _ => match algebraic_to_pos(s) {
+                    Some(p) => MAILBOX[p],
+                    None => return Result::Err("Illegal en passant string")
+                }
+            },
+            None => 0
+        };
+        let draw_ply = match iter.next() {
+            Some(s) => match s.parse::<usize>() {
+                Ok(v) => {
+                    if v >= 100 {
+                    return Result::Err("Illegal ply value"); 
+                    }
+                    v
+                },
+                Err(_) => return Result::Err("Illegal ply format")
+            },
+            None => 0
+        };
+        game.state = draw_ply << 24 | ep << 16 | castling << 8 | side;
+        game.king_white = match game.board.iter().position(|&p| p == WHITE | KING) {
+            Some(i) => i,
+            None => return Result::Err("No white king")
+        };
+        game.king_black = match game.board.iter().position(|&p| p == BLACK | KING) {
+            Some(i) => i,
+            None => return Result::Err("No black king")
+        };
+        return Result::Ok(game);
+    }
+
+    fn is_attacked_by(self: &Game, pos: usize, color: usize) -> bool {
+        if color == WHITE {
+            if self.board[pos + 9] == (PAWN | WHITE) || self.board[pos + 11] == (PAWN | WHITE) {
+                return true;
+            }
+        } else {
+            if self.board[pos - 9] == (PAWN | BLACK) || self.board[pos - 11] == (PAWN | BLACK) {
+                return true;
+            }
+        }
+        for delta in BISHOP_MOVEMENTS.iter() {
+            let mut to = ((pos as isize) + delta) as usize;
+            while self.board[to] == EMPTY {
+                to = ((to as isize) + delta) as usize;
+            }
+            if self.board[to] == BISHOP | color {
+                return true;
+            }
+        }
+        for delta in KNIGHT_MOVEMENTS.iter() {
+            if self.board[((pos as isize) + delta) as usize] == KNIGHT | color {
+                return true;
+            }
+        }
+        for delta in ROOK_MOVEMENTS.iter() {
+            let mut to = ((pos as isize) + delta) as usize;
+            while self.board[to] == EMPTY {
+                to = ((to as isize) + delta) as usize;
+            }
+            if self.board[to] == ROOK | color {
+                return true;
+            }
+        }
+        for delta in KING_MOVEMENTS.iter() {
+            let mut to = ((pos as isize) + delta) as usize;
+            while self.board[to] == EMPTY {
+                to = ((to as isize) + delta) as usize;
+            }
+            if self.board[to] == QUEEN | color {
+                return true;
+            }
+        }
+        for delta in KING_MOVEMENTS.iter() {
+            if self.board[((pos as isize) + delta) as usize] == KING | color {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    pub fn generate_moves(self: &Game) -> Vec<Move> {
+        let side = self.state & 0xff;
+        let xside = if side == WHITE { BLACK } else { WHITE };
+        let castling = (self.state >> 8) & 0xff;
+        let ep = (self.state >> 16) & 0xff;
+
+        let mut move_list = Vec::with_capacity(218);
+        for i in 0..64 {
+            let from = MAILBOX[i];
+            let piece = self.board[from];
+            if piece & COLOR_MASK == side {
+                match piece & PIECE_MASK {
+                    PAWN if side == WHITE => {
+                        if i >> 3 == 1 {
+                            if self.board[from - 10] == EMPTY {
+                                add_promotion(&mut move_list, from, from - 10, WHITE);
+                            }
+                            if self.board[from - 11] & COLOR_MASK == BLACK {
+                                add_promotion(&mut move_list, from, from - 11, WHITE);
+                            }
+                            if self.board[from - 9] & COLOR_MASK == BLACK {
+                                add_promotion(&mut move_list, from, from - 9, WHITE);
+                            }
+                        } else {
+                            if self.board[from - 10] == EMPTY {
+                                add_move(&mut move_list, from, from - 10);
+                                if i >> 3 == 6 && self.board[from - 20] == EMPTY {
+                                    add_move(&mut move_list, from, from - 20);
+                                }
+                            }
+                            if self.board[from - 11] & COLOR_MASK == BLACK || from - 11 == ep {
+                                add_move(&mut move_list, from, from - 11);
+                            }
+                            if self.board[from - 9] & COLOR_MASK == BLACK || from - 9 == ep {
+                                add_move(&mut move_list, from, from - 9);
                             }
                         }
-                        if game.board[from - 11] & COLOR_MASK == BLACK || from - 11 == ep {
-                            add_move(&mut move_list, from, from - 11);
-                        }
-                        if game.board[from - 9] & COLOR_MASK == BLACK || from - 9 == ep {
-                            add_move(&mut move_list, from, from - 9);
-                        }
-                    }
-                },
-                PAWN if side == BLACK => {
-                    if i >> 3 == 6 {
-                        if game.board[from + 10] == EMPTY {
-                            add_promotion(&mut move_list, from, from + 10, BLACK);
-                        }
-                        if game.board[from + 11] & COLOR_MASK == WHITE {
-                            add_promotion(&mut move_list, from, from + 11, BLACK);
-                        }
-                        if game.board[from + 9] & COLOR_MASK == WHITE {
-                            add_promotion(&mut move_list, from, from + 9, BLACK);
-                        }
-                    } else {
-                        if game.board[from + 10] == EMPTY {
-                            add_move(&mut move_list, from, from + 10);
-                            if i >> 3 == 1 && game.board[from + 20] == EMPTY {
-                                add_move(&mut move_list, from, from + 20);
+                    },
+                    PAWN if side == BLACK => {
+                        if i >> 3 == 6 {
+                            if self.board[from + 10] == EMPTY {
+                                add_promotion(&mut move_list, from, from + 10, BLACK);
+                            }
+                            if self.board[from + 11] & COLOR_MASK == WHITE {
+                                add_promotion(&mut move_list, from, from + 11, BLACK);
+                            }
+                            if self.board[from + 9] & COLOR_MASK == WHITE {
+                                add_promotion(&mut move_list, from, from + 9, BLACK);
+                            }
+                        } else {
+                            if self.board[from + 10] == EMPTY {
+                                add_move(&mut move_list, from, from + 10);
+                                if i >> 3 == 1 && self.board[from + 20] == EMPTY {
+                                    add_move(&mut move_list, from, from + 20);
+                                }
+                            }
+                            if self.board[from + 11] & COLOR_MASK == WHITE || from + 11 == ep {
+                                add_move(&mut move_list, from, from + 11);
+                            }
+                            if self.board[from + 9] & COLOR_MASK == WHITE || from + 9 == ep {
+                                add_move(&mut move_list, from, from + 9);
                             }
                         }
-                        if game.board[from + 11] & COLOR_MASK == WHITE || from + 11 == ep {
-                            add_move(&mut move_list, from, from + 11);
+                    },
+                    BISHOP => {
+                        for delta in BISHOP_MOVEMENTS.iter() {
+                            let mut to = ((from as isize) + delta) as usize;
+                            while self.board[to] == EMPTY {
+                                add_move(&mut move_list, from, to);
+                                to = ((to as isize) + delta) as usize;
+                            }
+                            if self.board[to] & COLOR_MASK == xside {
+                                add_move(&mut move_list, from, to);
+                            }
                         }
-                        if game.board[from + 9] & COLOR_MASK == WHITE || from + 9 == ep {
-                            add_move(&mut move_list, from, from + 9);
+                    },
+                    KNIGHT => {
+                        for delta in KNIGHT_MOVEMENTS.iter() {
+                            let to = ((from as isize) + delta) as usize;
+                            if self.board[to] == EMPTY || self.board[to] & COLOR_MASK == xside {
+                                add_move(&mut move_list, from, to);
+                            }
                         }
-                    }
-                },
-                BISHOP => {
-                    for delta in BISHOP_MOVEMENTS.iter() {
-                        let mut to = ((from as isize) + delta) as usize;
-                        while game.board[to] == EMPTY {
-                            add_move(&mut move_list, from, to);
-                            to = ((to as isize) + delta) as usize;
+                    },
+                    ROOK => {
+                        for delta in ROOK_MOVEMENTS.iter() {
+                            let mut to = ((from as isize) + delta) as usize;
+                            while self.board[to] == EMPTY {
+                                add_move(&mut move_list, from, to);
+                                to = ((to as isize) + delta) as usize;
+                            }
+                            if self.board[to] & COLOR_MASK == xside {
+                                add_move(&mut move_list, from, to);
+                            }
                         }
-                        if game.board[to] & COLOR_MASK == xside {
-                            add_move(&mut move_list, from, to);
+                    },
+                    QUEEN => {
+                        for delta in KING_MOVEMENTS.iter() {
+                            let mut to = ((from as isize) + delta) as usize;
+                            while self.board[to] == EMPTY {
+                                add_move(&mut move_list, from, to);
+                                to = ((to as isize) + delta) as usize;
+                            }
+                            if self.board[to] & COLOR_MASK == xside {
+                                add_move(&mut move_list, from, to);
+                            }
                         }
-                    }
-                },
-                KNIGHT => {
-                    for delta in KNIGHT_MOVEMENTS.iter() {
-                        let to = ((from as isize) + delta) as usize;
-                        if game.board[to] == EMPTY || game.board[to] & COLOR_MASK == xside {
-                            add_move(&mut move_list, from, to);
+                    },
+                    KING => {
+                        if from == 95 && (castling & (CASTLING_QUEEN_WHITE | CASTLING_KING_WHITE)) != 0
+                                && !self.is_attacked_by(95, BLACK) {
+                            if (castling & CASTLING_QUEEN_WHITE) != 0
+                                    && self.board[94] == EMPTY && self.board[93] == EMPTY && self.board[92] == EMPTY
+                                    && !self.is_attacked_by(94, BLACK) {
+                                add_move(&mut move_list, 95, 93);
+                            }
+                            if (castling & CASTLING_KING_WHITE) != 0
+                                    && self.board[96] == EMPTY && self.board[97] == EMPTY
+                                    && !self.is_attacked_by(96, BLACK) {
+                                add_move(&mut move_list, 95, 97);
+                            }
+                        } else if from == 25 && (castling & (CASTLING_QUEEN_BLACK | CASTLING_KING_BLACK)) != 0
+                                && !self.is_attacked_by(25, WHITE) {
+                            if (castling & CASTLING_QUEEN_BLACK) != 0
+                                    && self.board[24] == EMPTY && self.board[23] == EMPTY && self.board[22] == EMPTY
+                                    && !self.is_attacked_by(24, WHITE) {
+                                add_move(&mut move_list, 25, 23);
+                            }
+                            if (castling & CASTLING_KING_BLACK) != 0
+                                    && self.board[26] == EMPTY && self.board[27] == EMPTY
+                                    && !self.is_attacked_by(26, WHITE) {
+                                add_move(&mut move_list, 25, 27);
+                            }
                         }
-                    }
-                },
-                ROOK => {
-                    for delta in ROOK_MOVEMENTS.iter() {
-                        let mut to = ((from as isize) + delta) as usize;
-                        while game.board[to] == EMPTY {
-                            add_move(&mut move_list, from, to);
-                            to = ((to as isize) + delta) as usize;
+                        for delta in KING_MOVEMENTS.iter() {
+                            let to = ((from as isize) + delta) as usize;
+                            if self.board[to] == EMPTY || self.board[to] & COLOR_MASK == xside {
+                                add_move(&mut move_list, from, to);
+                            }
                         }
-                        if game.board[to] & COLOR_MASK == xside {
-                            add_move(&mut move_list, from, to);
-                        }
-                    }
-                },
-                QUEEN => {
-                    for delta in KING_MOVEMENTS.iter() {
-                        let mut to = ((from as isize) + delta) as usize;
-                        while game.board[to] == EMPTY {
-                            add_move(&mut move_list, from, to);
-                            to = ((to as isize) + delta) as usize;
-                        }
-                        if game.board[to] & COLOR_MASK == xside {
-                            add_move(&mut move_list, from, to);
-                        }
-                    }
-                },
-                KING => {
-                    if from == 95 && (castling & (CASTLING_QUEEN_WHITE | CASTLING_KING_WHITE)) != 0
-                            && !is_attacked_by(game, 95, BLACK) {
-                        if (castling & CASTLING_QUEEN_WHITE) != 0
-                                && game.board[94] == EMPTY && game.board[93] == EMPTY && game.board[92] == EMPTY
-                                && !is_attacked_by(game, 94, BLACK) {
-                            add_move(&mut move_list, 95, 93);
-                        }
-                        if (castling & CASTLING_KING_WHITE) != 0
-                                && game.board[96] == EMPTY && game.board[97] == EMPTY
-                                && !is_attacked_by(game, 96, BLACK) {
-                            add_move(&mut move_list, 95, 97);
-                        }
-                    } else if from == 25 && (castling & (CASTLING_QUEEN_BLACK | CASTLING_KING_BLACK)) != 0
-                            && !is_attacked_by(game, 25, WHITE) {
-                        if (castling & CASTLING_QUEEN_BLACK) != 0
-                                && game.board[24] == EMPTY && game.board[23] == EMPTY && game.board[22] == EMPTY
-                                && !is_attacked_by(game, 24, WHITE) {
-                            add_move(&mut move_list, 25, 23);
-                        }
-                        if (castling & CASTLING_KING_BLACK) != 0
-                                && game.board[26] == EMPTY && game.board[27] == EMPTY
-                                && !is_attacked_by(game, 26, WHITE) {
-                            add_move(&mut move_list, 25, 27);
-                        }
-                    }
-                    for delta in KING_MOVEMENTS.iter() {
-                        let to = ((from as isize) + delta) as usize;
-                        if game.board[to] == EMPTY || game.board[to] & COLOR_MASK == xside {
-                            add_move(&mut move_list, from, to);
-                        }
-                    }
-                },
-                _ => panic!("generate_moves: unknown piece")
+                    },
+                    _ => panic!("generate_moves: unknown piece")
+                }
+            }
+        }
+        move_list
+    }
+
+    pub fn make_move(self: &mut Game, mv: &Move) -> Option<UnMove> {
+        let from = mv.m & 0xff;
+        let to = (mv.m >> 8) & 0xff;
+        let promoted = (mv.m >> 16) & 0xff;
+        let piece = self.board[from];
+        let captured = self.board[to];
+        self.board[to] = if promoted != EMPTY { promoted } else { piece };
+        self.board[from] = EMPTY;
+        let from_state = self.state;
+        let from_ep = (from_state >> 16) & 0xff;
+        let mut to_ep = 0;
+        let from_draw_ply = (from_state >> 24) & 0xff;
+        let mut to_draw_ply = if captured == EMPTY { from_draw_ply + 1 } else { 0 };
+        let from_castling = (from_state >> 8) & 0xff;
+        let to_castling = from_castling & CASTLE_MASK[from] & CASTLE_MASK[to];
+        let side = from_state & 0xff;
+        let xside = if side == WHITE { BLACK } else { WHITE };
+
+        if piece == PAWN | WHITE {
+            if to == from_ep {
+                self.board[to + 10] = EMPTY;
+            } else if to == from - 20 {
+                to_ep = from - 10;
+            }
+            to_draw_ply = 0;
+        } else if piece == PAWN | BLACK {
+            if to == from_ep {
+                self.board[to - 10] = EMPTY;
+            } else if to == from + 20 {
+                to_ep = from + 10;
+            }
+            to_draw_ply = 0;
+        } else if piece == KING | WHITE {
+            self.king_white = to;
+            if from == 95 {
+                if to == 93 {
+                    self.board[91] = EMPTY;
+                    self.board[94] = ROOK | WHITE;
+                } else if to == 97 {
+                    self.board[98] = EMPTY;
+                    self.board[96] = ROOK | WHITE;
+                }
+            }
+        } else if piece == KING | BLACK {
+            self.king_black = to;
+            if from == 25 {
+                if to == 23 {
+                    self.board[21] = EMPTY;
+                    self.board[24] = ROOK | BLACK;
+                } else if to == 27 {
+                    self.board[28] = EMPTY;
+                    self.board[26] = ROOK | BLACK;
+                }
+            }
+        }
+
+        self.state = to_draw_ply << 24 | to_ep << 16 | to_castling << 8 | xside;
+
+        let unmove = (captured as u64) << 32 | from_state as u64;
+
+        if self.is_attacked_by(if side == WHITE { self.king_white } else { self.king_black }, xside) {
+            self.unmake_move(mv, unmove);
+            return Option::None;
+        }
+
+        return Option::Some(unmove);
+    }
+
+    pub fn unmake_move(self: &mut Game, mv: &Move, umv: UnMove) {
+        let from = mv.m & 0xff;
+        let to = (mv.m >> 8) & 0xff;
+        let promoted = (mv.m >> 16) & 0xff;
+        let captured = ((umv >> 32) & 0xff) as usize;
+        self.state = (umv & 0xffffffff) as usize;
+        let side = self.state & 0xff;
+        let ep = (self.state >> 16) & 0xff;
+        let piece = if promoted != EMPTY { PAWN | side } else { self.board[to] };
+        self.board[from] = piece;
+        self.board[to] = captured;
+
+        if piece == PAWN | WHITE {
+            if to == ep {
+                self.board[to + 10] = PAWN | BLACK;
+            }
+        } else if piece == PAWN | BLACK {
+            if to == ep {
+                self.board[to - 10] = PAWN | WHITE;
+            }
+        } else if piece == KING | WHITE {
+            self.king_white = from;
+            if from == 95 && to == 93 {
+                self.board[91] = ROOK | WHITE;
+                self.board[94] = EMPTY;
+            } else if from == 95 && to == 97 {
+                self.board[98] = ROOK | WHITE;
+                self.board[96] = EMPTY;
+            }
+        } else if piece == KING | BLACK {
+            self.king_black = from;
+            if from == 25 && to == 23 {
+                self.board[21] = ROOK | BLACK;
+                self.board[24] = EMPTY;
+            } else if from == 25 && to == 27 {
+                self.board[28] = ROOK | BLACK;
+                self.board[26] = EMPTY;
             }
         }
     }
-    move_list
-}
 
-pub fn make_move(game: &mut Game, mv: &Move) -> Option<UnMove> {
-    let from = mv.m & 0xff;
-    let to = (mv.m >> 8) & 0xff;
-    let promoted = (mv.m >> 16) & 0xff;
-    let piece = game.board[from];
-    let captured = game.board[to];
-    game.board[to] = if promoted != EMPTY { promoted } else { piece };
-    game.board[from] = EMPTY;
-    let from_state = game.state;
-    let from_ep = (from_state >> 16) & 0xff;
-    let mut to_ep = 0;
-    let from_draw_ply = (from_state >> 24) & 0xff;
-    let mut to_draw_ply = if captured == EMPTY { from_draw_ply + 1 } else { 0 };
-    let from_castling = (from_state >> 8) & 0xff;
-    let to_castling = from_castling & CASTLE_MASK[from] & CASTLE_MASK[to];
-    let side = from_state & 0xff;
-    let xside = if side == WHITE { BLACK } else { WHITE };
-
-    if piece == PAWN | WHITE {
-        if to == from_ep {
-            game.board[to + 10] = EMPTY;
-        } else if to == from - 20 {
-            to_ep = from - 10;
-        }
-        to_draw_ply = 0;
-    } else if piece == PAWN | BLACK {
-        if to == from_ep {
-            game.board[to - 10] = EMPTY;
-        } else if to == from + 20 {
-            to_ep = from + 10;
-        }
-        to_draw_ply = 0;
-    } else if piece == KING | WHITE {
-        game.king_white = to;
-        if from == 95 {
-            if to == 93 {
-                game.board[91] = EMPTY;
-                game.board[94] = ROOK | WHITE;
-            } else if to == 97 {
-                game.board[98] = EMPTY;
-                game.board[96] = ROOK | WHITE;
-            }
-        }
-    } else if piece == KING | BLACK {
-        game.king_black = to;
-        if from == 25 {
-            if to == 23 {
-                game.board[21] = EMPTY;
-                game.board[24] = ROOK | BLACK;
-            } else if to == 27 {
-                game.board[28] = EMPTY;
-                game.board[26] = ROOK | BLACK;
-            }
-        }
-    }
-
-    game.state = to_draw_ply << 24 | to_ep << 16 | to_castling << 8 | xside;
-
-    let unmove = (captured as u64) << 32 | from_state as u64;
-
-    if is_attacked_by(game, if side == WHITE { game.king_white } else { game.king_black }, xside) {
-        unmake_move(game, mv, unmove);
-        return Option::None;
-    }
-
-    return Option::Some(unmove);
-}
-
-pub fn unmake_move(game: &mut Game, mv: &Move, umv: UnMove) {
-    let from = mv.m & 0xff;
-    let to = (mv.m >> 8) & 0xff;
-    let promoted = (mv.m >> 16) & 0xff;
-    let captured = ((umv >> 32) & 0xff) as usize;
-    game.state = (umv & 0xffffffff) as usize;
-    let side = game.state & 0xff;
-    let ep = (game.state >> 16) & 0xff;
-    let piece = if promoted != EMPTY { PAWN | side } else { game.board[to] };
-    game.board[from] = piece;
-    game.board[to] = captured;
-
-    if piece == PAWN | WHITE {
-        if to == ep {
-            game.board[to + 10] = PAWN | BLACK;
-        }
-    } else if piece == PAWN | BLACK {
-        if to == ep {
-            game.board[to - 10] = PAWN | WHITE;
-        }
-    } else if piece == KING | WHITE {
-        game.king_white = from;
-        if from == 95 && to == 93 {
-            game.board[91] = ROOK | WHITE;
-            game.board[94] = EMPTY;
-        } else if from == 95 && to == 97 {
-            game.board[98] = ROOK | WHITE;
-            game.board[96] = EMPTY;
-        }
-    } else if piece == KING | BLACK {
-        game.king_black = from;
-        if from == 25 && to == 23 {
-            game.board[21] = ROOK | BLACK;
-            game.board[24] = EMPTY;
-        } else if from == 25 && to == 27 {
-            game.board[28] = ROOK | BLACK;
-            game.board[26] = EMPTY;
-        }
-    }
 }

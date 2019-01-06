@@ -1,10 +1,10 @@
 use std::io;
 
-use rustypawn::init_game;
+use rustypawn::Game;
 
 fn main() {
     let mut input = String::new();
-    let mut game = init_game("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0");
+    let mut game = Game::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0");
     loop {
         match io::stdin().read_line(&mut input) {
             Ok(0) => break,

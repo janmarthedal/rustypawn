@@ -2,24 +2,20 @@ use std::time::Instant;
 extern crate rustypawn;
 
 use rustypawn::Game;
-use rustypawn::generate_moves;
-use rustypawn::make_move;
-use rustypawn::unmake_move;
-use rustypawn::init_game;
 
 fn perft_sub(game: &mut Game, depth: usize) -> usize {
     if depth == 0 {
         return 1;
     }
 
-    let move_list = generate_moves(game);
+    let move_list = game.generate_moves();
 
     let mut result = 0;
     for mv in &move_list {
-        match make_move(game, &mv) {
+        match game.make_move(&mv) {
             Some(umv) => {
                 let count_sub = perft_sub(game, depth - 1);
-                unmake_move(game, &mv, umv);
+                game.unmake_move(&mv, umv);
                 result += count_sub;
             },
             None => {}
@@ -30,7 +26,7 @@ fn perft_sub(game: &mut Game, depth: usize) -> usize {
 }
 
 pub fn perft(fen: &str, depth: usize) -> usize {
-    match init_game(fen) {
+    match Game::from_fen(fen) {
         Ok(mut game) => perft_sub(&mut game, depth),
         Err(_) => 0
     }
