@@ -30,8 +30,27 @@ const CASTLE_MASK: [usize; 120] = [
     0,  0,  0,  0,  0,  0,  0,  0,  0, 0,
 ];
 
+fn pos_to_algebraic(pos: usize) -> String {
+    format!("{}{}", (96 + (pos % 10)) as u8 as char, (58 - (pos / 10)) as u8 as char)
+}
+
+#[derive(PartialEq, Clone)]
 pub struct Move {
     m: usize,  // promoted << 16 | to << 8 | from
+}
+
+impl Move {
+    pub fn to_algebraic(self: &Move) -> String {
+        let promotion = match (self.m >> 16) & 0xff {
+            EMPTY => "",
+            BISHOP => "b",
+            KNIGHT => "n",
+            ROOK => "r",
+            QUEEN => "q",
+            _ => panic!("to_algebraic")
+        };
+        format!("{}{}{}", pos_to_algebraic(self.m & 0xff), pos_to_algebraic((self.m >> 8) & 0xff), promotion)
+    }
 }
 
 type UnMove = u64;  // captured << 32 | state
@@ -65,7 +84,7 @@ const KNIGHT_MOVEMENTS: [isize; 8] = [-21, -19, -12, -8, 8, 12, 19, 21];
 const ROOK_MOVEMENTS: [isize; 4] = [-1, 1, -10, 10];
 const KING_MOVEMENTS: [isize; 8] = [-1, 1, -10, 10, -11, -9, 9, 11];
 
-fn algebraic_to_pos(s: &str) -> Option<usize> {
+pub fn algebraic_to_pos(s: &str) -> Option<usize> {
     let mut iter = s.chars();
     let c = match iter.next() {
         Option::Some(c) => {
@@ -96,6 +115,21 @@ fn algebraic_to_pos(s: &str) -> Option<usize> {
     }
 }
 
+pub fn algebraic_to_move(s: &str) -> Move {
+    let from = algebraic_to_pos(&s[0..2]).unwrap();
+    let to = algebraic_to_pos(&s[2..4]).unwrap();
+    let promoted = match &s[4..] {
+        "b" => BISHOP,
+        "n" => KNIGHT,
+        "r" => ROOK,
+        "q" => QUEEN,
+        "" => EMPTY,
+        _ => panic!("algebraic_to_move: illegal promotion")
+    };
+    Move {
+        m: promoted << 16 | MAILBOX[to] << 8 | MAILBOX[from]
+    }
+}
 
 fn add_move(move_list: &mut Vec<Move>, from: usize, to: usize) {
     move_list.push(Move {
@@ -103,18 +137,18 @@ fn add_move(move_list: &mut Vec<Move>, from: usize, to: usize) {
     });
 }
 
-fn add_promotion(move_list: &mut Vec<Move>, from: usize, to: usize, side: usize) {
+fn add_promotion(move_list: &mut Vec<Move>, from: usize, to: usize) {
     move_list.push(Move {
-        m: (BISHOP | side) << 16 | to << 8 | from
+        m: BISHOP << 16 | to << 8 | from
     });
     move_list.push(Move {
-        m: (KNIGHT | side) << 16 | to << 8 | from
+        m: KNIGHT << 16 | to << 8 | from
     });
     move_list.push(Move {
-        m: (ROOK | side) << 16 | to << 8 | from
+        m: ROOK << 16 | to << 8 | from
     });
     move_list.push(Move {
-        m: (QUEEN | side) << 16 | to << 8 | from
+        m: QUEEN << 16 | to << 8 | from
     });
 }
 
@@ -284,13 +318,13 @@ impl Game {
                     PAWN if side == WHITE => {
                         if i >> 3 == 1 {
                             if self.board[from - 10] == EMPTY {
-                                add_promotion(&mut move_list, from, from - 10, WHITE);
+                                add_promotion(&mut move_list, from, from - 10);
                             }
                             if self.board[from - 11] & COLOR_MASK == BLACK {
-                                add_promotion(&mut move_list, from, from - 11, WHITE);
+                                add_promotion(&mut move_list, from, from - 11);
                             }
                             if self.board[from - 9] & COLOR_MASK == BLACK {
-                                add_promotion(&mut move_list, from, from - 9, WHITE);
+                                add_promotion(&mut move_list, from, from - 9);
                             }
                         } else {
                             if self.board[from - 10] == EMPTY {
@@ -310,13 +344,13 @@ impl Game {
                     PAWN if side == BLACK => {
                         if i >> 3 == 6 {
                             if self.board[from + 10] == EMPTY {
-                                add_promotion(&mut move_list, from, from + 10, BLACK);
+                                add_promotion(&mut move_list, from, from + 10);
                             }
                             if self.board[from + 11] & COLOR_MASK == WHITE {
-                                add_promotion(&mut move_list, from, from + 11, BLACK);
+                                add_promotion(&mut move_list, from, from + 11);
                             }
                             if self.board[from + 9] & COLOR_MASK == WHITE {
-                                add_promotion(&mut move_list, from, from + 9, BLACK);
+                                add_promotion(&mut move_list, from, from + 9);
                             }
                         } else {
                             if self.board[from + 10] == EMPTY {
@@ -423,8 +457,6 @@ impl Game {
         let promoted = (mv.m >> 16) & 0xff;
         let piece = self.board[from];
         let captured = self.board[to];
-        self.board[to] = if promoted != EMPTY { promoted } else { piece };
-        self.board[from] = EMPTY;
         let from_state = self.state;
         let from_ep = (from_state >> 16) & 0xff;
         let mut to_ep = 0;
@@ -434,6 +466,9 @@ impl Game {
         let to_castling = from_castling & CASTLE_MASK[from] & CASTLE_MASK[to];
         let side = from_state & 0xff;
         let xside = if side == WHITE { BLACK } else { WHITE };
+
+        self.board[to] = if promoted != EMPTY { promoted | side } else { piece };
+        self.board[from] = EMPTY;
 
         if piece == PAWN | WHITE {
             if to == from_ep {
