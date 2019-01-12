@@ -36,6 +36,11 @@ fn make_move_algebraic(game: &mut Game, input_move: &str) {
     panic!("make_move_algebraic");
 }
 
+fn millis_since(time: &Instant) -> u64 {
+    let elapsed = time.elapsed();
+    return 1000 * elapsed.as_secs() + elapsed.subsec_millis() as u64;
+}
+
 /*fn think(game: &mut Game) -> Option<Move> {
     let moves = legal_moves(game);
     if moves.is_empty() {
@@ -128,18 +133,16 @@ struct Search<'a> {
     comms: &'a mut Comms,
     nodes: usize,
     start_time: Instant,
-    depth: usize,
     pv_pool: Vec<Vec<Move>>
 }
 
 impl<'a> Search<'a> {
 
-    pub fn new(depth: usize, comms: &'a mut Comms) -> Search<'a> {
+    pub fn new(comms: &'a mut Comms) -> Search<'a> {
         Search {
             comms,
             nodes: 0,
             start_time: Instant::now(),
-            depth,
             pv_pool: Vec::new()
         }
     }
@@ -155,9 +158,10 @@ impl<'a> Search<'a> {
         self.pv_pool.push(pv);
     }
 
-    pub fn search(self: &mut Search<'a>, game: &mut Game, alpha: isize, beta: isize, ply: usize, pv: &mut Vec<Move>) -> isize {
+    pub fn search(self: &mut Search<'a>, game: &mut Game, alpha: isize, beta: isize,
+                  ply: usize, depth: usize, pv: &mut Vec<Move>) -> isize {
         self.nodes += 1;
-        if ply >= self.depth {
+        if ply >= depth {
             return game.evaluate();
         }
 
@@ -165,6 +169,12 @@ impl<'a> Search<'a> {
         let moves = game.generate_moves();
         let mut any_legal_moves = false;
         let mut new_alpha = alpha;
+        let mut new_depth = depth;
+        let in_check = game.in_check();
+
+        if in_check {
+            new_depth += 1;
+        }
 
         for mv in &moves {
             let umv = match game.make_move(mv) {
@@ -173,7 +183,7 @@ impl<'a> Search<'a> {
             };
             any_legal_moves = true;
 
-            let score = -self.search(game, -beta, -new_alpha, ply + 1, &mut child_pv);
+            let score = -self.search(game, -beta, -new_alpha, ply + 1, new_depth, &mut child_pv);
 
             game.unmake_move(mv, umv);
 
@@ -187,9 +197,9 @@ impl<'a> Search<'a> {
                 pv.push(mv.clone());
                 pv.append(&mut child_pv);
                 if ply == 0 {
-                    let secs = self.start_time.elapsed().as_secs();
-                    let nps = if secs > 0 { self.nodes as u64 / secs } else { 0 };
-                    let msg = format!("info score cp {} nodes {} time {} nps {} pv {}", score, self.nodes, 1000 * secs, nps,
+                    let millis = millis_since(&self.start_time);
+                    let nps = if millis > 0 { self.nodes as u64 / millis / 1000 } else { 0 };
+                    let msg = format!("info score cp {} nodes {} time {} nps {} pv {}", score, self.nodes, millis, nps,
                         pv.iter().map(|m| m.to_algebraic()).collect::<Vec<String>>().join(" "));
                     self.comms.output(msg);
                 }
@@ -199,8 +209,8 @@ impl<'a> Search<'a> {
 
         if any_legal_moves {
             new_alpha
-        } else if game.in_check() {
-            -1000000 + ply as isize
+        } else if in_check {
+            -100000 + ply as isize
         } else {
             0
         }
@@ -208,10 +218,11 @@ impl<'a> Search<'a> {
 }
 
 fn think3(game: &mut Game, comms: &mut Comms) -> Option<Move> {
-    let mut search = Search::new(7, comms);
+    let mut search = Search::new(comms);
     let mut pv: Vec<Move> = search.new_pv();
+    let depth = 4;
 
-    search.search(game, -1000000, 1000000, 0, &mut pv);
+    search.search(game, -100000, 100000, 0, depth, &mut pv);
 
     return Some(pv[0].clone());
 }
