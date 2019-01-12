@@ -119,27 +119,40 @@ impl Comms {
         println!("{}", s);
         self.write("< ", &s[..]);
     }
-    pub fn debug(self: &mut Comms, msg: &str) {
+    /*pub fn debug(self: &mut Comms, msg: &str) {
         self.write("! ", msg);
-    }
+    }*/
 }
 
 struct Search<'a> {
+    comms: &'a mut Comms,
     nodes: usize,
     start_time: Instant,
     depth: usize,
-    comms: &'a mut Comms
+    pv_pool: Vec<Vec<Move>>
 }
 
 impl<'a> Search<'a> {
 
     pub fn new(depth: usize, comms: &'a mut Comms) -> Search<'a> {
         Search {
+            comms,
             nodes: 0,
             start_time: Instant::now(),
             depth,
-            comms
+            pv_pool: Vec::new()
         }
+    }
+
+    fn new_pv(self: &mut Search<'a>) -> Vec<Move> {
+        match self.pv_pool.pop() {
+            Some(pv) => pv,
+            None => Vec::with_capacity(MAX_DEPTH)
+        }
+    }
+
+    fn free_pv(self: &mut Search<'a>, pv: Vec<Move>) {
+        self.pv_pool.push(pv);
     }
 
     pub fn search(self: &mut Search<'a>, game: &mut Game, alpha: isize, beta: isize, ply: usize, pv: &mut Vec<Move>) -> isize {
@@ -148,7 +161,7 @@ impl<'a> Search<'a> {
             return game.evaluate();
         }
 
-        let mut child_pv: Vec<Move> = Vec::with_capacity(MAX_DEPTH);        
+        let mut child_pv = self.new_pv();
         let moves = game.generate_moves();
         let mut any_legal_moves = false;
         let mut new_alpha = alpha;
@@ -165,6 +178,7 @@ impl<'a> Search<'a> {
             game.unmake_move(mv, umv);
 
             if score >= beta {
+                self.free_pv(child_pv);
                 return beta;
             }
             if score > new_alpha {
@@ -181,6 +195,7 @@ impl<'a> Search<'a> {
                 }
             }
         }
+        self.free_pv(child_pv);
 
         if any_legal_moves {
             new_alpha
@@ -194,7 +209,7 @@ impl<'a> Search<'a> {
 
 fn think3(game: &mut Game, comms: &mut Comms) -> Option<Move> {
     let mut search = Search::new(7, comms);
-    let mut pv: Vec<Move> = Vec::with_capacity(MAX_DEPTH);
+    let mut pv: Vec<Move> = search.new_pv();
 
     search.search(game, -1000000, 1000000, 0, &mut pv);
 
