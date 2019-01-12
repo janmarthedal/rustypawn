@@ -1,7 +1,10 @@
 extern crate rand;
+use std::fs::File;
+use std::io::Write;
 use std::io;
+use std::time::Instant;
 
-use rand::prelude::{thread_rng, Rng};
+// use rand::prelude::{thread_rng, Rng};
 use rustypawn::Game;
 use rustypawn::Move;
 use rustypawn::algebraic_to_move;
@@ -33,7 +36,7 @@ fn make_move_algebraic(game: &mut Game, input_move: &str) {
     panic!("make_move_algebraic");
 }
 
-fn think(game: &mut Game) -> Option<Move> {
+/*fn think(game: &mut Game) -> Option<Move> {
     let moves = legal_moves(game);
     if moves.is_empty() {
         return None;
@@ -89,24 +92,135 @@ fn think2(game: &mut Game, depth: usize) -> Option<Move> {
     } else {
         None
     }
+}*/
+
+const MAX_DEPTH: usize = 32;
+
+struct Comms {
+    file: File
+}
+
+impl Comms {
+    pub fn new(name: &str) -> Comms {
+        Comms {
+            file: File::create(name).unwrap()
+        }
+    }
+    fn write(self: &mut Comms, prefix: &str, msg: &str) {
+        self.file.write_all(prefix.as_bytes()).unwrap();
+        self.file.write_all(msg.as_bytes()).unwrap();
+        self.file.write_all(b"\n").unwrap();
+    }
+    pub fn input(self: &mut Comms, msg: &str) {
+        self.write("> ", msg);
+    }
+    pub fn output<S: Into<String>>(self: &mut Comms, msg: S) {
+        let s = msg.into();
+        println!("{}", s);
+        self.write("< ", &s[..]);
+    }
+    pub fn debug(self: &mut Comms, msg: &str) {
+        self.write("! ", msg);
+    }
+}
+
+struct Search<'a> {
+    nodes: usize,
+    start_time: Instant,
+    depth: usize,
+    comms: &'a mut Comms
+}
+
+impl<'a> Search<'a> {
+
+    pub fn new(depth: usize, comms: &'a mut Comms) -> Search<'a> {
+        Search {
+            nodes: 0,
+            start_time: Instant::now(),
+            depth,
+            comms
+        }
+    }
+
+    pub fn search(self: &mut Search<'a>, game: &mut Game, alpha: isize, beta: isize, ply: usize, pv: &mut Vec<Move>) -> isize {
+        self.nodes += 1;
+        if ply >= self.depth {
+            return game.evaluate();
+        }
+
+        let mut child_pv: Vec<Move> = Vec::with_capacity(MAX_DEPTH);        
+        let moves = game.generate_moves();
+        let mut any_legal_moves = false;
+        let mut new_alpha = alpha;
+
+        for mv in &moves {
+            let umv = match game.make_move(mv) {
+                Some(umv) => umv,
+                None => continue
+            };
+            any_legal_moves = true;
+
+            let score = -self.search(game, -beta, -new_alpha, ply + 1, &mut child_pv);
+
+            game.unmake_move(mv, umv);
+
+            if score >= beta {
+                return beta;
+            }
+            if score > new_alpha {
+                new_alpha = score;
+                pv.clear();
+                pv.push(mv.clone());
+                pv.append(&mut child_pv);
+                if ply == 0 {
+                    let secs = self.start_time.elapsed().as_secs();
+                    let nps = if secs > 0 { self.nodes as u64 / secs } else { 0 };
+                    let msg = format!("info score cp {} nodes {} time {} nps {} pv {}", score, self.nodes, 1000 * secs, nps,
+                        pv.iter().map(|m| m.to_algebraic()).collect::<Vec<String>>().join(" "));
+                    self.comms.output(msg);
+                }
+            }
+        }
+
+        if any_legal_moves {
+            new_alpha
+        } else if game.in_check() {
+            -1000000 + ply as isize
+        } else {
+            0
+        }
+    }
+}
+
+fn think3(game: &mut Game, comms: &mut Comms) -> Option<Move> {
+    let mut search = Search::new(7, comms);
+    let mut pv: Vec<Move> = Vec::with_capacity(MAX_DEPTH);
+
+    search.search(game, -1000000, 1000000, 0, &mut pv);
+
+    return Some(pv[0].clone());
 }
 
 fn main() {
     let mut game = Game::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0").unwrap();
+    let mut comms = Comms::new("comms.txt");
+
     loop {
         let mut input = String::new();
         match io::stdin().read_line(&mut input) {
             Ok(0) => break,
             Ok(_) => {
-                let args: Vec<&str> = input.trim().split_whitespace().collect();
+                let line = input.trim();
+                comms.input(line);
+                let args: Vec<&str> = line.split_whitespace().collect();
                 match args[0] {
                     "uci" => {
-                        println!("id name rustypawn");
-                        println!("id author Jan Marthedal Rasmussen");
-                        println!("uciok");
+                        comms.output("id name rustypawn");
+                        comms.output("id author Jan Marthedal Rasmussen");
+                        comms.output("uciok");
                     },
                     "isready" => {
-                        println!("readyok");
+                        comms.output("readyok");
                     },
                     "position" => {
                         if args.len() < 2 {
@@ -147,11 +261,11 @@ fn main() {
                         }
                     },
                     "go" => {
-                        let mv = match think2(&mut game, 5) {
+                        let mv = match think3(&mut game, &mut comms) {
                             Some(m) => m,
                             None => panic!("No legal move")
                         };
-                        println!("bestmove {}", mv.to_algebraic());
+                        comms.output(format!("bestmove {}", mv.to_algebraic()));
                     }
                     _ => continue
                 }
