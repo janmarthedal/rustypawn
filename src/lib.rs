@@ -83,6 +83,11 @@ const BISHOP_MOVEMENTS: [isize; 4] = [-11, -9, 9, 11];
 const KNIGHT_MOVEMENTS: [isize; 8] = [-21, -19, -12, -8, 8, 12, 19, 21];
 const ROOK_MOVEMENTS: [isize; 4] = [-1, 1, -10, 10];
 const KING_MOVEMENTS: [isize; 8] = [-1, 1, -10, 10, -11, -9, 9, 11];
+const PAWN_VALUE: usize = 100;
+const BISHOP_VALUE: usize = 300;
+const KNIGHT_VALUE: usize = 300;
+const ROOK_VALUE: usize = 500;
+const QUEEN_VALUE: usize = 900;
 
 pub fn algebraic_to_pos(s: &str) -> Option<usize> {
     let mut iter = s.chars();
@@ -559,6 +564,43 @@ impl Game {
                 self.board[26] = EMPTY;
             }
         }
+    }
+
+    pub fn evaluate(self: &Game) -> isize {
+        let mut white_mat: isize = 0;
+        let mut black_mat: isize = 0;
+
+        for i in 0..64 {
+            let from = MAILBOX[i];
+            let piece = self.board[from];
+            let value = match piece & PIECE_MASK {
+                PAWN => PAWN_VALUE,
+                BISHOP => BISHOP_VALUE,
+                KNIGHT => KNIGHT_VALUE,
+                ROOK => ROOK_VALUE,
+                QUEEN => QUEEN_VALUE,
+                _ => continue
+            };
+            if piece & COLOR_MASK == WHITE {
+                white_mat += value as isize;
+            } else {
+                black_mat += value as isize;
+            }
+        }
+
+        let side = self.state & 0xff;
+        if side == WHITE {
+            white_mat - black_mat
+        } else {
+            black_mat - white_mat
+        }
+    }
+
+    pub fn in_check(self: &Game) -> bool {
+        let side = self.state & 0xff;
+        let king_position = if side == WHITE { self.king_white } else { self.king_black };
+        let xside = if side == WHITE { BLACK } else { WHITE };
+        self.is_attacked_by(king_position, xside)
     }
 
 }

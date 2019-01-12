@@ -42,6 +42,55 @@ fn think(game: &mut Game) -> Option<Move> {
     Some(moves[num].clone())
 }
 
+fn search2(game: &mut Game, depth: usize) -> isize {
+    if depth == 0 {
+        return game.evaluate();
+    }
+    let moves = legal_moves(game);
+    let mut best_score: Option<isize> = None;
+    for mv in &moves {
+        let umv = match game.make_move(mv) {
+            Some(umv) => umv,
+            None => continue
+        };
+        let score = -search2(game, depth - 1);
+        game.unmake_move(mv, umv);
+        best_score = match best_score {
+            Some(bs) => if score > bs { Some(score) } else { best_score },
+            None => Some(score)
+        };
+    }
+    if let Some(score) = best_score {
+        score
+    } else if game.in_check() {
+        -1000000
+    } else {
+        0
+    }
+}
+
+fn think2(game: &mut Game, depth: usize) -> Option<Move> {
+    let moves = legal_moves(game);
+    let mut best_move: Option<(Move, isize)> = None;
+    for mv in moves {
+        let umv = match game.make_move(&mv) {
+            Some(umv) => umv,
+            None => continue
+        };
+        let score = -search2(game, depth - 1);
+        game.unmake_move(&mv, umv);
+        best_move = match best_move {
+            Some((_, bsc)) => if score > bsc { Some((mv, score)) } else { best_move },
+            None => Some((mv, score))
+        };
+    }
+    if let Some((mv, _)) = best_move {
+        Some(mv)
+    } else {
+        None
+    }
+}
+
 fn main() {
     let mut game = Game::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0").unwrap();
     loop {
@@ -98,7 +147,7 @@ fn main() {
                         }
                     },
                     "go" => {
-                        let mv = match think(&mut game) {
+                        let mv = match think2(&mut game, 5) {
                             Some(m) => m,
                             None => panic!("No legal move")
                         };
