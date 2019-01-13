@@ -158,11 +158,16 @@ impl<'a> Search<'a> {
     }
 
     pub fn search(self: &mut Search<'a>, alpha: isize, beta: isize,
-                  ply: usize, depth: usize, follow_pv: bool) -> isize {
+                  ply: usize, depth: usize, follow_pv: bool) -> Option<isize> {
         self.nodes += 1;
+
+        if self.nodes % 1024 == 0 && millis_since(&self.start_time) >= self.max_millis {
+            return None
+        }
+
         if ply >= depth {
             self.pv[ply].clear();
-            return self.game.evaluate();
+            return Some(self.game.evaluate());
         }
 
         let mut moves = self.game.generate_moves();
@@ -179,7 +184,6 @@ impl<'a> Search<'a> {
         if follow_pv {
             if ply < self.pv[0].len() {
                 if let Some(i) = moves.iter().position(|m| *m == self.pv[0][ply]) {
-                    self.comms.debug("Swapping");
                     moves.swap(0, i);
                 } else {
                     follow_pv = false;
@@ -196,47 +200,54 @@ impl<'a> Search<'a> {
             };
             any_legal_moves = true;
 
-            let score = -self.search(-beta, -alpha, ply + 1, new_depth, follow_pv);
-            follow_pv = false;
+            if let Some(xscore) = self.search(-beta, -alpha, ply + 1, new_depth, follow_pv) {
+                self.game.unmake_move(mv, umv);
 
-            self.game.unmake_move(mv, umv);
-
-            if score >= beta {
-                return beta;
-            }
-            if score > alpha {
-                alpha = score;
-                self.tmp_pv.push(mv.clone());
-                self.tmp_pv.append(&mut self.pv[ply + 1]);
-                self.pv[ply].clear();
-                self.pv[ply].append(&mut self.tmp_pv);
-                if ply == 0 {
-                    let millis = millis_since(&self.start_time);
-                    let nps = if millis > 0 { self.nodes as u64 / millis / 1000 } else { 0 };
-                    let msg = format!("info depth {} score cp {} nodes {} time {} nps {} pv {}",
-                        depth, score, self.nodes, millis, nps,
-                        self.pv[0].iter().map(|m| m.to_algebraic()).collect::<Vec<String>>().join(" "));
-                    self.comms.output(msg);
+                let score = -xscore;
+                if score >= beta {
+                    return Some(beta);
                 }
+                if score > alpha {
+                    alpha = score;
+                    self.tmp_pv.push(mv.clone());
+                    self.tmp_pv.append(&mut self.pv[ply + 1]);
+                    self.pv[ply].clear();
+                    self.pv[ply].append(&mut self.tmp_pv);
+                    if ply == 0 {
+                        let millis = millis_since(&self.start_time);
+                        let nps = if millis > 0 { 1000 * self.nodes as u64 / millis } else { 0 };
+                        let msg = format!("info depth {} score cp {} nodes {} time {} nps {} pv {}",
+                            depth, score, self.nodes, millis, nps,
+                            self.pv[0].iter().map(|m| m.to_algebraic()).collect::<Vec<String>>().join(" "));
+                        self.comms.output(msg);
+                    }
+                }
+                follow_pv = false;
+            } else {
+                return None;
             }
         }
 
-        if any_legal_moves {
-            alpha
-        } else if in_check {
-            -100000 + ply as isize
-        } else {
-            0
-        }
+        Some(
+            if any_legal_moves {
+                alpha
+            } else if in_check {
+                -100000 + ply as isize
+            } else {
+                0
+            }
+        )
     }
 }
 
 fn think3(game: &mut Game, comms: &mut Comms) -> Option<Move> {
     let mut search = Search::new(game, 1000, comms);
-    let depth = 6;
+    let depth = MAX_DEPTH;
 
     for d in 1..depth {
-        search.search(-100000, 100000, 0, d, true);
+        if let None = search.search(-100000, 100000, 0, d, true) {
+            break;
+        }
     }
 
     if search.pv[0].len() > 0 {
