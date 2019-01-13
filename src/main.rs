@@ -41,64 +41,6 @@ fn millis_since(time: &Instant) -> u64 {
     return 1000 * elapsed.as_secs() + elapsed.subsec_millis() as u64;
 }
 
-/*fn think(game: &mut Game) -> Option<Move> {
-    let moves = legal_moves(game);
-    if moves.is_empty() {
-        return None;
-    }
-    let num = thread_rng().gen_range(0, moves.len());
-    Some(moves[num].clone())
-}
-
-fn search2(game: &mut Game, depth: usize) -> isize {
-    if depth == 0 {
-        return game.evaluate();
-    }
-    let moves = legal_moves(game);
-    let mut best_score: Option<isize> = None;
-    for mv in &moves {
-        let umv = match game.make_move(mv) {
-            Some(umv) => umv,
-            None => continue
-        };
-        let score = -search2(game, depth - 1);
-        game.unmake_move(mv, umv);
-        best_score = match best_score {
-            Some(bs) => if score > bs { Some(score) } else { best_score },
-            None => Some(score)
-        };
-    }
-    if let Some(score) = best_score {
-        score
-    } else if game.in_check() {
-        -1000000
-    } else {
-        0
-    }
-}
-
-fn think2(game: &mut Game, depth: usize) -> Option<Move> {
-    let moves = legal_moves(game);
-    let mut best_move: Option<(Move, isize)> = None;
-    for mv in moves {
-        let umv = match game.make_move(&mv) {
-            Some(umv) => umv,
-            None => continue
-        };
-        let score = -search2(game, depth - 1);
-        game.unmake_move(&mv, umv);
-        best_move = match best_move {
-            Some((_, bsc)) => if score > bsc { Some((mv, score)) } else { best_move },
-            None => Some((mv, score))
-        };
-    }
-    if let Some((mv, _)) = best_move {
-        Some(mv)
-    } else {
-        None
-    }
-}*/
-
 const MAX_DEPTH: usize = 32;
 
 struct Comms {
@@ -124,9 +66,14 @@ impl Comms {
         println!("{}", s);
         self.write("< ", &s[..]);
     }
-    pub fn debug(self: &mut Comms, msg: &str) {
-        self.write("! ", msg);
+    pub fn fatal<S: Into<String>>(self: &mut Comms, msg: S) -> ! {
+        let s = msg.into();
+        self.write("! ", &s[..]);
+        panic!(s);
     }
+    /*pub fn debug(self: &mut Comms, msg: &str) {
+        self.write("- ", msg);
+    }*/
 }
 
 struct Search<'a> {
@@ -136,7 +83,8 @@ struct Search<'a> {
     start_time: Instant,
     max_millis: u64,
     pv: Vec<Vec<Move>>,
-    tmp_pv: Vec<Move>
+    tmp_pv: Vec<Move>,
+    stop_thinking: bool
 }
 
 impl<'a> Search<'a> {
@@ -153,32 +101,34 @@ impl<'a> Search<'a> {
             start_time: Instant::now(),
             max_millis,
             pv,
-            tmp_pv: Vec::with_capacity(MAX_DEPTH)
+            tmp_pv: Vec::with_capacity(MAX_DEPTH),
+            stop_thinking: false
         }
     }
 
     pub fn search(self: &mut Search<'a>, alpha: isize, beta: isize,
-                  ply: usize, depth: usize, follow_pv: bool) -> Option<isize> {
+                  ply: usize, depth: usize, follow_pv: bool) -> isize {
         self.nodes += 1;
 
         if self.nodes % 1024 == 0 && millis_since(&self.start_time) >= self.max_millis {
-            return None
+            self.stop_thinking = true;
+            return 0;  // return value will be ignored
         }
 
         if ply >= depth {
             self.pv[ply].clear();
-            return Some(self.game.evaluate());
+            return self.game.evaluate();
         }
 
         let mut moves = self.game.generate_moves();
         let mut any_legal_moves = false;
         let mut alpha = alpha;
-        let mut new_depth = depth;
+        let mut depth = depth;
         let mut follow_pv = follow_pv;
         let in_check = self.game.in_check();
 
         if in_check {
-            new_depth += 1;
+            depth += 1;
         }
 
         if follow_pv {
@@ -200,52 +150,51 @@ impl<'a> Search<'a> {
             };
             any_legal_moves = true;
 
-            if let Some(xscore) = self.search(-beta, -alpha, ply + 1, new_depth, follow_pv) {
-                self.game.unmake_move(mv, umv);
+            let score = -self.search(-beta, -alpha, ply + 1, depth, follow_pv);
 
-                let score = -xscore;
-                if score >= beta {
-                    return Some(beta);
-                }
-                if score > alpha {
-                    alpha = score;
-                    self.tmp_pv.push(mv.clone());
-                    self.tmp_pv.append(&mut self.pv[ply + 1]);
-                    self.pv[ply].clear();
-                    self.pv[ply].append(&mut self.tmp_pv);
-                    if ply == 0 {
-                        let millis = millis_since(&self.start_time);
-                        let nps = if millis > 0 { 1000 * self.nodes as u64 / millis } else { 0 };
-                        let msg = format!("info depth {} score cp {} nodes {} time {} nps {} pv {}",
-                            depth, score, self.nodes, millis, nps,
-                            self.pv[0].iter().map(|m| m.to_algebraic()).collect::<Vec<String>>().join(" "));
-                        self.comms.output(msg);
-                    }
-                }
-                follow_pv = false;
-            } else {
-                return None;
+            self.game.unmake_move(mv, umv);
+
+            if self.stop_thinking {
+                return 0;  // return value will be ignored
             }
+            if score >= beta {
+                return beta;
+            }
+            if score > alpha {
+                alpha = score;
+                self.tmp_pv.push(mv.clone());
+                self.tmp_pv.append(&mut self.pv[ply + 1]);
+                self.pv[ply].clear();
+                self.pv[ply].append(&mut self.tmp_pv);
+                if ply == 0 {
+                    let millis = millis_since(&self.start_time);
+                    let nps = if millis > 0 { 1000 * self.nodes as u64 / millis } else { 0 };
+                    let msg = format!("info depth {} score cp {} nodes {} time {} nps {} pv {}",
+                        depth, score, self.nodes, millis, nps,
+                        self.pv[0].iter().map(|m| m.to_algebraic()).collect::<Vec<String>>().join(" "));
+                    self.comms.output(msg);
+                }
+            }
+            follow_pv = false;
         }
 
-        Some(
-            if any_legal_moves {
-                alpha
-            } else if in_check {
-                -100000 + ply as isize
-            } else {
-                0
-            }
-        )
+        if any_legal_moves {
+            alpha
+        } else if in_check {
+            -100000 + ply as isize
+        } else {
+            0
+        }
     }
 }
 
-fn think3(game: &mut Game, comms: &mut Comms) -> Option<Move> {
+fn think(game: &mut Game, comms: &mut Comms) -> Option<Move> {
     let mut search = Search::new(game, 1000, comms);
     let depth = MAX_DEPTH;
 
     for d in 1..depth {
-        if let None = search.search(-100000, 100000, 0, d, true) {
+        search.search(-100000, 100000, 0, d, true);
+        if search.stop_thinking {
             break;
         }
     }
@@ -268,58 +217,54 @@ fn main() {
             Ok(_) => {
                 let line = input.trim();
                 comms.input(line);
-                let args: Vec<&str> = line.split_whitespace().collect();
-                match args[0] {
-                    "uci" => {
+                let mut arg_iter = line.split_whitespace();
+                match arg_iter.next() {
+                    Some("uci") => {
                         comms.output("id name rustypawn");
                         comms.output("id author Jan Marthedal Rasmussen");
                         comms.output("uciok");
                     },
-                    "isready" => {
+                    Some("isready") => {
                         comms.output("readyok");
                     },
-                    "position" => {
-                        if args.len() < 2 {
-                            panic!("Missing arguments to 'position'");
-                        }
-                        let mut index = 2;
-                        let fen = match args[1] {
-                            "startpos" => {
+                    Some("position") => {
+                        let fen = match arg_iter.next() {
+                            Some("startpos") => {
                                 // position startpos
                                 // position startpos moves e2e4 e7e5
                                 String::from("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0")
                             },
-                            "fen" => {
+                            Some("fen") => {
                                 // position fen rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w moves e2e4 e7e5
-                                if args.len() < 4 {
-                                    panic!("Too few 'position fen' arguments");
-                                }
                                 let mut fen_items: Vec<&str> = Vec::new();
-                                while index < args.len() && args[index] != "moves" {
-                                    fen_items.push(args[index]);
-                                    index += 1;
+                                loop {
+                                    match arg_iter.next() {
+                                        Some("moves") => break,
+                                        Some(s) => fen_items.push(s),
+                                        None => break
+                                    }
                                 }
                                 fen_items.join(" ")
                             },
-                            _ => panic!("Unknown 'position' argument '{}'", args[1])
+                            Some(_) => comms.fatal("Unknown 'position' argument"),
+                            _ => comms.fatal("Missing argument to 'position'")
                         };
-                        // println!("init position: {}", fen);
                         game = match Game::from_fen(&fen[..]) {
                             Ok(g) => g,
-                            Err(e) => panic!("Illegal fen string '{}' ({})", fen, e)
+                            Err(e) => comms.fatal(format!("Illegal fen string '{}' ({})", fen, e))
                         };
-                        if index < args.len() && args[index] == "moves" {
-                            index += 1;
-                            while index < args.len() {
-                                make_move_algebraic(&mut game, args[index]);
-                                index += 1;
+                        loop {
+                            match arg_iter.next() {
+                                Some("moves") => continue,
+                                Some(s) => make_move_algebraic(&mut game, s),
+                                None => break
                             }
                         }
                     },
-                    "go" => {
-                        let mv = match think3(&mut game, &mut comms) {
+                    Some("go") => {
+                        let mv = match think(&mut game, &mut comms) {
                             Some(m) => m,
-                            None => panic!("No legal move")
+                            None => comms.fatal("No legal move")
                         };
                         comms.output(format!("bestmove {}", mv.to_algebraic()));
                     }
