@@ -71,9 +71,10 @@ impl Comms {
         self.write("! ", &s[..]);
         panic!(s);
     }
-    /*pub fn debug(self: &mut Comms, msg: &str) {
-        self.write("- ", msg);
-    }*/
+    pub fn debug<S: Into<String>>(self: &mut Comms, msg: S) {
+        let s = msg.into();
+        self.write("- ", &s[..]);
+    }
 }
 
 struct Search<'a> {
@@ -188,12 +189,13 @@ impl<'a> Search<'a> {
     }
 }
 
-fn think(game: &mut Game, comms: &mut Comms) -> Option<Move> {
-    let mut search = Search::new(game, 1000, comms);
-    let depth = MAX_DEPTH;
+fn think(game: &mut Game, millis_to_think: u64, search_depth: usize, comms: &mut Comms) -> Option<Move> {
+    comms.debug(format!("think movetime {} depth {}", millis_to_think, search_depth));
 
-    for d in 1..depth {
-        search.search(-100000, 100000, 0, d, true);
+    let mut search = Search::new(game, millis_to_think, comms);
+
+    for depth in 1..search_depth {
+        search.search(-100000, 100000, 0, depth, true);
         if search.stop_thinking {
             break;
         }
@@ -262,7 +264,73 @@ fn main() {
                         }
                     },
                     Some("go") => {
-                        let mv = match think(&mut game, &mut comms) {
+                        let white_to_move = game.white_to_move();
+                        let mut millis_to_think: u64 = 10 * 60 * 1000;  // 10 minutes
+                        let mut wtime: i32 = -1;
+                        let mut btime: i32 = -1;
+                        let mut movestogo: u64 = 0;
+                        loop {
+                            match arg_iter.next() {
+                                Some("wtime") => {
+                                    match arg_iter.next() {
+                                        Some(s) => {
+                                            wtime = match s.parse::<i32>() {
+                                                Ok(n) => n,
+                                                _ => comms.fatal("Error parsing wtime")
+                                            };
+                                            if white_to_move && movestogo > 0 {
+                                                millis_to_think = wtime as u64 / movestogo;
+                                            }
+                                        },
+                                        None => comms.fatal("Missing wtime")
+                                    }
+                                },
+                                Some("btime") => {
+                                    match arg_iter.next() {
+                                        Some(s) => {
+                                            btime = match s.parse::<i32>() {
+                                                Ok(n) => n,
+                                                _ => comms.fatal("Error parsing btime")
+                                            };
+                                            if !white_to_move && movestogo > 0 {
+                                                millis_to_think = btime as u64 / movestogo;
+                                            }
+                                        },
+                                        None => comms.fatal("Missing btime")
+                                    }
+                                },
+                                Some("movestogo") => {
+                                    match arg_iter.next() {
+                                        Some(s) => {
+                                            movestogo = match s.parse::<u64>() {
+                                                Ok(n) => n,
+                                                _ => comms.fatal("Error parsing movestogo")
+                                            };
+                                            if white_to_move && wtime > 0 {
+                                                millis_to_think = wtime as u64 / movestogo;
+                                            } else if !white_to_move && btime > 0 {
+                                                millis_to_think = btime as u64 / movestogo;
+                                            }
+                                        },
+                                        None => comms.fatal("Missing movestogo")
+                                    }
+                                },
+                                Some("movetime") => {
+                                    match arg_iter.next() {
+                                        Some(s) => {
+                                            millis_to_think = match s.parse::<u64>() {
+                                                Ok(n) => n,
+                                                _ => comms.fatal("Error parsing movetime")
+                                            };
+                                        },
+                                        None => comms.fatal("Missing movetime")
+                                    }
+                                },
+                                Some(s) => comms.debug(format!("Ignore go argument '{}'", s)),
+                                None => break
+                            }
+                        }
+                        let mv = match think(&mut game, millis_to_think, MAX_DEPTH, &mut comms) {
                             Some(m) => m,
                             None => comms.fatal("No legal move")
                         };
@@ -271,7 +339,7 @@ fn main() {
                     _ => continue
                 }
             }
-            Err(error) => panic!("error: {}", error),
+            Err(error) => comms.fatal(format!("error: {}", error))
         }
     }
 }

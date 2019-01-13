@@ -603,4 +603,8 @@ impl Game {
         self.is_attacked_by(king_position, xside)
     }
 
+    pub fn white_to_move(self: &Game) -> bool {
+        self.state & 0xff == WHITE
+    }
+
 }
