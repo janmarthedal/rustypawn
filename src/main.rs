@@ -135,57 +135,50 @@ struct Search<'a> {
     nodes: usize,
     start_time: Instant,
     max_millis: u64,
-    best_pv: Vec<Move>,
-    pv_pool: Vec<Vec<Move>>
+    pv: Vec<Vec<Move>>,
+    tmp_pv: Vec<Move>
 }
 
 impl<'a> Search<'a> {
 
     pub fn new(game: &'a mut Game, max_millis: u64, comms: &'a mut Comms) -> Search<'a> {
+        let mut pv: Vec<Vec<Move>> = Vec::with_capacity(MAX_DEPTH);
+        for _ in 1..MAX_DEPTH {
+            pv.push(Vec::with_capacity(MAX_DEPTH));
+        }
         Search {
             game,
             comms,
             nodes: 0,
             start_time: Instant::now(),
             max_millis,
-            best_pv: Vec::new(),
-            pv_pool: Vec::new()
+            pv,
+            tmp_pv: Vec::with_capacity(MAX_DEPTH)
         }
-    }
-
-    fn new_pv(self: &mut Search<'a>) -> Vec<Move> {
-        match self.pv_pool.pop() {
-            Some(pv) => pv,
-            None => Vec::with_capacity(MAX_DEPTH)
-        }
-    }
-
-    fn free_pv(self: &mut Search<'a>, pv: Vec<Move>) {
-        self.pv_pool.push(pv);
     }
 
     pub fn search(self: &mut Search<'a>, alpha: isize, beta: isize,
-                  ply: usize, depth: usize, pv: &mut Vec<Move>, follow_pv: bool) -> isize {
+                  ply: usize, depth: usize, follow_pv: bool) -> isize {
         self.nodes += 1;
         if ply >= depth {
+            self.pv[ply].clear();
             return self.game.evaluate();
         }
 
-        let mut child_pv = self.new_pv();
         let mut moves = self.game.generate_moves();
         let mut any_legal_moves = false;
         let mut alpha = alpha;
-        let mut depth = depth;
+        let mut new_depth = depth;
         let mut follow_pv = follow_pv;
         let in_check = self.game.in_check();
 
         if in_check {
-            depth += 1;
+            new_depth += 1;
         }
 
         if follow_pv {
-            if ply < self.best_pv.len() {
-                if let Some(i) = moves.iter().position(|m| *m == self.best_pv[ply]) {
+            if ply < self.pv[0].len() {
+                if let Some(i) = moves.iter().position(|m| *m == self.pv[0][ply]) {
                     self.comms.debug("Swapping");
                     moves.swap(0, i);
                 } else {
@@ -203,30 +196,30 @@ impl<'a> Search<'a> {
             };
             any_legal_moves = true;
 
-            let score = -self.search(-beta, -alpha, ply + 1, depth, &mut child_pv, follow_pv);
+            let score = -self.search(-beta, -alpha, ply + 1, new_depth, follow_pv);
             follow_pv = false;
 
             self.game.unmake_move(mv, umv);
 
             if score >= beta {
-                self.free_pv(child_pv);
                 return beta;
             }
             if score > alpha {
                 alpha = score;
-                pv.clear();
-                pv.push(mv.clone());
-                pv.append(&mut child_pv);
+                self.tmp_pv.push(mv.clone());
+                self.tmp_pv.append(&mut self.pv[ply + 1]);
+                self.pv[ply].clear();
+                self.pv[ply].append(&mut self.tmp_pv);
                 if ply == 0 {
                     let millis = millis_since(&self.start_time);
                     let nps = if millis > 0 { self.nodes as u64 / millis / 1000 } else { 0 };
-                    let msg = format!("info score cp {} nodes {} time {} nps {} pv {}", score, self.nodes, millis, nps,
-                        pv.iter().map(|m| m.to_algebraic()).collect::<Vec<String>>().join(" "));
+                    let msg = format!("info depth {} score cp {} nodes {} time {} nps {} pv {}",
+                        depth, score, self.nodes, millis, nps,
+                        self.pv[0].iter().map(|m| m.to_algebraic()).collect::<Vec<String>>().join(" "));
                     self.comms.output(msg);
                 }
             }
         }
-        self.free_pv(child_pv);
 
         if any_legal_moves {
             alpha
@@ -243,13 +236,11 @@ fn think3(game: &mut Game, comms: &mut Comms) -> Option<Move> {
     let depth = 6;
 
     for d in 1..depth {
-        let mut pv: Vec<Move> = search.new_pv();
-        search.search(-100000, 100000, 0, d, &mut pv, true);
-        search.best_pv = pv;
+        search.search(-100000, 100000, 0, d, true);
     }
 
-    if search.best_pv.len() > 0 {
-        Some(search.best_pv[0].clone())
+    if search.pv[0].len() > 0 {
+        Some(search.pv[0][0].clone())
     } else {
         None
     }
