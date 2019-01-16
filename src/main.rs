@@ -295,6 +295,31 @@ fn think(game: &mut Game, millis_to_think: u64, search_depth: usize, comms: &mut
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn three_fold_repetition() {
+        let mut game = Game::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0").unwrap();
+        make_move_algebraic(&mut game, "g1f3");
+        make_move_algebraic(&mut game, "b8c6");
+        make_move_algebraic(&mut game, "f3g1");
+        make_move_algebraic(&mut game, "c6b8");
+        assert_eq!(game.repetitions(), 1);
+        make_move_algebraic(&mut game, "g1f3");
+        make_move_algebraic(&mut game, "b8c6");
+        make_move_algebraic(&mut game, "f3g1");
+        make_move_algebraic(&mut game, "c6b8");
+        assert_eq!(game.repetitions(), 2);
+        make_move_algebraic(&mut game, "g1f3");
+        make_move_algebraic(&mut game, "b8c6");
+        make_move_algebraic(&mut game, "f3g1");
+        make_move_algebraic(&mut game, "c6b8");
+        assert_eq!(game.repetitions(), 3);
+    }
+}
+
 fn main() {
     let mut game = Game::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0").unwrap();
     let mut comms = Comms::new("comms.txt");
