@@ -14,6 +14,18 @@ const CASTLING_KING_WHITE: usize = 1;
 const CASTLING_QUEEN_WHITE: usize = 2;
 const CASTLING_KING_BLACK: usize = 4;
 const CASTLING_QUEEN_BLACK: usize = 8;
+const WHITE_PAWN: usize = WHITE | PAWN;
+const WHITE_BISHOP: usize = WHITE | BISHOP;
+const WHITE_KNIGHT: usize = WHITE | KNIGHT;
+const WHITE_ROOK: usize = WHITE | ROOK;
+const WHITE_QUEEN: usize = WHITE | QUEEN;
+const WHITE_KING: usize = WHITE | KING;
+const BLACK_PAWN: usize = BLACK | PAWN;
+const BLACK_BISHOP: usize = BLACK | BISHOP;
+const BLACK_KNIGHT: usize = BLACK | KNIGHT;
+const BLACK_ROOK: usize = BLACK | ROOK;
+const BLACK_QUEEN: usize = BLACK | QUEEN;
+const BLACK_KING: usize = BLACK | KING;
 
 const CASTLE_MASK: [usize; 120] = [
     0,  0,  0,  0,  0,  0,  0,  0,  0, 0,
@@ -83,11 +95,45 @@ const BISHOP_MOVEMENTS: [isize; 4] = [-11, -9, 9, 11];
 const KNIGHT_MOVEMENTS: [isize; 8] = [-21, -19, -12, -8, 8, 12, 19, 21];
 const ROOK_MOVEMENTS: [isize; 4] = [-1, 1, -10, 10];
 const KING_MOVEMENTS: [isize; 8] = [-1, 1, -10, 10, -11, -9, 9, 11];
-const PAWN_VALUE: usize = 100;
-const BISHOP_VALUE: usize = 300;
-const KNIGHT_VALUE: usize = 300;
-const ROOK_VALUE: usize = 500;
-const QUEEN_VALUE: usize = 900;
+const PAWN_VALUE: isize = 100;
+const BISHOP_VALUE: isize = 300;
+const KNIGHT_VALUE: isize = 300;
+const ROOK_VALUE: isize = 500;
+const QUEEN_VALUE: isize = 900;
+
+const BISHOP_PCSQ: [isize; 64] = [
+	-10, -10, -10, -10, -10, -10, -10, -10,
+	-10,   0,   0,   0,   0,   0,   0, -10,
+	-10,   0,   5,   5,   5,   5,   0, -10,
+	-10,   0,   5,  10,  10,   5,   0, -10,
+	-10,   0,   5,  10,  10,   5,   0, -10,
+	-10,   0,   5,   5,   5,   5,   0, -10,
+	-10,   0,   0,   0,   0,   0,   0, -10,
+	-10, -10, -20, -10, -10, -20, -10, -10
+];
+
+const KNIGHT_PCSQ: [isize; 64] = [
+	-10, -10, -10, -10, -10, -10, -10, -10,
+	-10,   0,   0,   0,   0,   0,   0, -10,
+	-10,   0,   5,   5,   5,   5,   0, -10,
+	-10,   0,   5,  10,  10,   5,   0, -10,
+	-10,   0,   5,  10,  10,   5,   0, -10,
+	-10,   0,   5,   5,   5,   5,   0, -10,
+	-10,   0,   0,   0,   0,   0,   0, -10,
+	-10, -30, -10, -10, -10, -10, -30, -10
+];
+
+const FLIP: [usize; 64] = [
+	 56,  57,  58,  59,  60,  61,  62,  63,
+	 48,  49,  50,  51,  52,  53,  54,  55,
+	 40,  41,  42,  43,  44,  45,  46,  47,
+	 32,  33,  34,  35,  36,  37,  38,  39,
+	 24,  25,  26,  27,  28,  29,  30,  31,
+	 16,  17,  18,  19,  20,  21,  22,  23,
+	  8,   9,  10,  11,  12,  13,  14,  15,
+	  0,   1,   2,   3,   4,   5,   6,   7
+];
+
 
 pub fn algebraic_to_pos(s: &str) -> Option<usize> {
     let mut iter = s.chars();
@@ -674,19 +720,45 @@ impl Game {
         for i in 0..64 {
             let from = MAILBOX[i];
             let piece = self.board[from];
-            let value = match piece & PIECE_MASK {
-                PAWN => PAWN_VALUE,
-                BISHOP => BISHOP_VALUE,
-                KNIGHT => KNIGHT_VALUE,
-                ROOK => ROOK_VALUE,
-                QUEEN => QUEEN_VALUE,
+            match piece {
+                WHITE_PAWN => {
+                    white_mat += PAWN_VALUE;
+                },
+                WHITE_BISHOP => {
+                    white_mat += BISHOP_VALUE;
+                    white_mat += BISHOP_PCSQ[i];
+                },
+                WHITE_KNIGHT => {
+                    white_mat += KNIGHT_VALUE;
+                    white_mat += KNIGHT_PCSQ[i];
+                },
+                WHITE_ROOK => {
+                    white_mat += ROOK_VALUE;
+                },
+                WHITE_QUEEN => {
+                    white_mat += QUEEN_VALUE;
+                },
+                WHITE_KING => {},
+                BLACK_PAWN => {
+                    black_mat += PAWN_VALUE;
+                },
+                BLACK_BISHOP => {
+                    black_mat += BISHOP_VALUE;
+                    black_mat += BISHOP_PCSQ[FLIP[i]];
+                },
+                BLACK_KNIGHT => {
+                    black_mat += KNIGHT_VALUE;
+                    black_mat += KNIGHT_PCSQ[FLIP[i]];
+                },
+                BLACK_ROOK => {
+                    black_mat += ROOK_VALUE;
+                },
+                BLACK_QUEEN => {
+                    black_mat += QUEEN_VALUE;
+                },
+                BLACK_KING => {},
                 _ => continue
             };
-            if piece & COLOR_MASK == WHITE {
-                white_mat += value as isize;
-            } else {
-                black_mat += value as isize;
-            }
         }
 
         let side = self.state & 0xff;
