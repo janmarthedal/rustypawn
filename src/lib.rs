@@ -456,6 +456,107 @@ impl Game {
         move_list
     }
 
+    pub fn capture_moves(self: &Game) -> Vec<Move> {
+        let side = self.state & 0xff;
+        let xside = if side == WHITE { BLACK } else { WHITE };
+        let ep = (self.state >> 16) & 0xff;
+
+        let mut move_list = Vec::with_capacity(218);
+        for i in 0..64 {
+            let from = MAILBOX[i];
+            let piece = self.board[from];
+            if piece & COLOR_MASK == side {
+                match piece & PIECE_MASK {
+                    PAWN if side == WHITE => {
+                        if i >> 3 == 1 {
+                            if self.board[from - 11] & COLOR_MASK == BLACK {
+                                add_promotion(&mut move_list, from, from - 11);
+                            }
+                            if self.board[from - 9] & COLOR_MASK == BLACK {
+                                add_promotion(&mut move_list, from, from - 9);
+                            }
+                        } else {
+                            if self.board[from - 11] & COLOR_MASK == BLACK || from - 11 == ep {
+                                add_move(&mut move_list, from, from - 11);
+                            }
+                            if self.board[from - 9] & COLOR_MASK == BLACK || from - 9 == ep {
+                                add_move(&mut move_list, from, from - 9);
+                            }
+                        }
+                    },
+                    PAWN if side == BLACK => {
+                        if i >> 3 == 6 {
+                            if self.board[from + 11] & COLOR_MASK == WHITE {
+                                add_promotion(&mut move_list, from, from + 11);
+                            }
+                            if self.board[from + 9] & COLOR_MASK == WHITE {
+                                add_promotion(&mut move_list, from, from + 9);
+                            }
+                        } else {
+                            if self.board[from + 11] & COLOR_MASK == WHITE || from + 11 == ep {
+                                add_move(&mut move_list, from, from + 11);
+                            }
+                            if self.board[from + 9] & COLOR_MASK == WHITE || from + 9 == ep {
+                                add_move(&mut move_list, from, from + 9);
+                            }
+                        }
+                    },
+                    BISHOP => {
+                        for delta in BISHOP_MOVEMENTS.iter() {
+                            let mut to = ((from as isize) + delta) as usize;
+                            while self.board[to] == EMPTY {
+                                to = ((to as isize) + delta) as usize;
+                            }
+                            if self.board[to] & COLOR_MASK == xside {
+                                add_move(&mut move_list, from, to);
+                            }
+                        }
+                    },
+                    KNIGHT => {
+                        for delta in KNIGHT_MOVEMENTS.iter() {
+                            let to = ((from as isize) + delta) as usize;
+                            if self.board[to] & COLOR_MASK == xside {
+                                add_move(&mut move_list, from, to);
+                            }
+                        }
+                    },
+                    ROOK => {
+                        for delta in ROOK_MOVEMENTS.iter() {
+                            let mut to = ((from as isize) + delta) as usize;
+                            while self.board[to] == EMPTY {
+                                to = ((to as isize) + delta) as usize;
+                            }
+                            if self.board[to] & COLOR_MASK == xside {
+                                add_move(&mut move_list, from, to);
+                            }
+                        }
+                    },
+                    QUEEN => {
+                        for delta in KING_MOVEMENTS.iter() {
+                            let mut to = ((from as isize) + delta) as usize;
+                            while self.board[to] == EMPTY {
+                                to = ((to as isize) + delta) as usize;
+                            }
+                            if self.board[to] & COLOR_MASK == xside {
+                                add_move(&mut move_list, from, to);
+                            }
+                        }
+                    },
+                    KING => {
+                        for delta in KING_MOVEMENTS.iter() {
+                            let to = ((from as isize) + delta) as usize;
+                            if self.board[to] & COLOR_MASK == xside {
+                                add_move(&mut move_list, from, to);
+                            }
+                        }
+                    },
+                    _ => panic!("capture_moves: unknown piece")
+                }
+            }
+        }
+        move_list
+    }
+
     pub fn make_move(self: &mut Game, mv: &Move) -> Option<UnMove> {
         let from = mv.m & 0xff;
         let to = (mv.m >> 8) & 0xff;

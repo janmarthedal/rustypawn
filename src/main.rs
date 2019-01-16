@@ -1,4 +1,3 @@
-extern crate rand;
 use std::fs::File;
 use std::io::Write;
 use std::io;
@@ -92,7 +91,7 @@ impl<'a> Search<'a> {
 
     pub fn new(game: &'a mut Game, max_millis: u64, comms: &'a mut Comms) -> Search<'a> {
         let mut pv: Vec<Vec<Move>> = Vec::with_capacity(MAX_DEPTH);
-        for _ in 1..MAX_DEPTH {
+        for _ in 0..MAX_DEPTH {
             pv.push(Vec::with_capacity(MAX_DEPTH));
         }
         Search {
@@ -107,8 +106,8 @@ impl<'a> Search<'a> {
         }
     }
 
-    pub fn search(self: &mut Search<'a>, alpha: isize, beta: isize,
-                  ply: usize, depth: usize, follow_pv: bool) -> isize {
+    pub fn quiesce(self: &mut Search<'a>, alpha: isize, beta: isize,
+                   ply: usize, follow_pv: bool) -> isize {
         self.nodes += 1;
 
         if self.nodes % 1024 == 0 && millis_since(&self.start_time) >= self.max_millis {
@@ -116,8 +115,80 @@ impl<'a> Search<'a> {
             return 0;  // return value will be ignored
         }
 
+        if ply == MAX_DEPTH - 1 {
+            return self.game.evaluate();
+        }
+
+        let mut score = self.game.evaluate();
+        let mut alpha = alpha;
+
+        if score >= beta {
+            return beta;
+        }
+        if score > alpha {
+            alpha = score;
+        }
+
+        let mut moves = self.game.capture_moves();
+        let mut follow_pv = follow_pv;
+
+        if follow_pv {
+            if ply < self.pv[0].len() {
+                if let Some(i) = moves.iter().position(|m| *m == self.pv[0][ply]) {
+                    moves.swap(0, i);
+                } else {
+                    follow_pv = false;
+                }
+            } else {
+                follow_pv = false;
+            }
+        }
+
+        for mv in &moves {
+            let umv = match self.game.make_move(mv) {
+                Some(umv) => umv,
+                None => continue
+            };
+
+            self.pv[ply + 1].clear();    
+            score = -self.quiesce(-beta, -alpha, ply + 1, follow_pv);
+
+            self.game.unmake_move(mv, umv);
+
+            if self.stop_thinking {
+                return 0;  // return value will be ignored
+            }
+            if score > alpha {
+                if score >= beta {
+                    return beta;
+                }
+                alpha = score;
+
+                self.tmp_pv.push(mv.clone());
+                self.tmp_pv.append(&mut self.pv[ply + 1]);
+                self.pv[ply].clear();
+                self.pv[ply].append(&mut self.tmp_pv);
+            }
+            follow_pv = false;
+        }
+
+        alpha
+    }
+
+    pub fn search(self: &mut Search<'a>, alpha: isize, beta: isize,
+                  ply: usize, depth: usize, follow_pv: bool) -> isize {
         if ply >= depth {
-            self.pv[ply].clear();
+            return self.quiesce(alpha, beta, ply, follow_pv);
+        }
+
+        self.nodes += 1;
+
+        if self.nodes % 1024 == 0 && millis_since(&self.start_time) >= self.max_millis {
+            self.stop_thinking = true;
+            return 0;  // return value will be ignored
+        }
+
+        if ply == MAX_DEPTH - 1 {
             return self.game.evaluate();
         }
 
@@ -151,6 +222,7 @@ impl<'a> Search<'a> {
             };
             any_legal_moves = true;
 
+            self.pv[ply + 1].clear();    
             let score = -self.search(-beta, -alpha, ply + 1, depth, follow_pv);
 
             self.game.unmake_move(mv, umv);
