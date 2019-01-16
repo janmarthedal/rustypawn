@@ -1,3 +1,5 @@
+use rand::prelude::*;
+
 const EMPTY: usize = 0;
 const PAWN: usize = 1;
 const BISHOP: usize = 2;
@@ -72,6 +74,12 @@ pub struct Game {
     state: usize,  // draw_ply << 24 | ep << 16 | castling << 8 | turn
     king_white: usize,
     king_black: usize,
+    piece_hashes: [u64; 12 * 64],
+    black_hash: u64,
+    castling_hashes: [u64; 16],
+    ep_hashes: [u64; 8],
+    hash: u64,
+    hash_history: Vec<u64>,
 }
 
 const MAILBOX: [usize; 64] = [
@@ -206,16 +214,35 @@ fn add_promotion(move_list: &mut Vec<Move>, from: usize, to: usize) {
 impl Game {
 
     fn new() -> Game {
-        let mut game = Game {
-            board: [OFF_BOARD; 120],
+        let mut rng = rand::thread_rng();
+        Game {
+            board: {
+                let mut b: [usize; 120] = [OFF_BOARD; 120];
+                for i in 0..64 { b[MAILBOX[i]] = EMPTY; }
+                b
+            },
             state: 0,
             king_white: 0,
             king_black: 0,
-        };
-        for i in 0..64 {
-            game.board[MAILBOX[i]] = EMPTY;
+            piece_hashes: {
+                let mut h: [u64; 12 * 64] = [0; 12 * 64];
+                for k in 0..(12 * 64) { h[k] = rng.next_u64(); }
+                h
+            },
+            black_hash: rng.next_u64(),
+            castling_hashes: {
+                let mut h: [u64; 16] = [0; 16];
+                for k in 0..16 { h[k] = rng.next_u64(); }
+                h
+            },
+            ep_hashes: {
+                let mut h: [u64; 8] = [0; 8];
+                for k in 0..8 { h[k] = rng.next_u64(); }
+                h
+            },
+            hash: 0,
+            hash_history: Vec::new(),
         }
-        game
     }
 
     pub fn from_fen(fen: &str) -> Result<Game, &str> {
@@ -284,7 +311,7 @@ impl Game {
             Some(s) => match s.parse::<usize>() {
                 Ok(v) => {
                     if v >= 100 {
-                    return Result::Err("Illegal ply value"); 
+                        return Result::Err("Illegal ply value"); 
                     }
                     v
                 },
@@ -301,7 +328,31 @@ impl Game {
             Some(i) => i,
             None => return Result::Err("No black king")
         };
+        game.set_hash();
         return Result::Ok(game);
+    }
+
+    fn set_hash(self: &mut Game) {
+        let mut hash: u64 = 0;
+        for i in 0..64 {
+            let piece = self.board[MAILBOX[i]];
+            if piece != EMPTY {
+                let mut n = (piece & PIECE_MASK) - 1;
+                if (piece & COLOR_MASK) == BLACK {
+                    n += 6;
+                }
+                hash ^= self.piece_hashes[n * 64 + i];
+            }
+        }
+        if !self.white_to_move() {
+            hash ^= self.black_hash;
+        }
+        hash ^= self.castling_hashes[(self.state >> 8) & 15];
+        let ep = (self.state >> 16) & 0xff;
+        if ep != 0 {
+            hash ^= self.ep_hashes[(ep % 10) - 1];
+        }
+        self.hash = hash;
     }
 
     fn is_attacked_by(self: &Game, pos: usize, color: usize) -> bool {
@@ -661,13 +712,14 @@ impl Game {
         }
 
         self.state = to_draw_ply << 24 | to_ep << 16 | to_castling << 8 | xside;
-
+        self.hash_history.push(self.hash);
         let unmove = (captured as u64) << 32 | from_state as u64;
 
         if self.is_attacked_by(if side == WHITE { self.king_white } else { self.king_black }, xside) {
             self.unmake_move(mv, unmove);
             return Option::None;
         }
+        self.set_hash();
 
         return Option::Some(unmove);
     }
@@ -683,6 +735,7 @@ impl Game {
         let piece = if promoted != EMPTY { PAWN | side } else { self.board[to] };
         self.board[from] = piece;
         self.board[to] = captured;
+        self.hash = self.hash_history.pop().unwrap();
 
         if piece == PAWN | WHITE {
             if to == ep {
@@ -718,8 +771,7 @@ impl Game {
         let mut black_mat: isize = 0;
 
         for i in 0..64 {
-            let from = MAILBOX[i];
-            let piece = self.board[from];
+            let piece = self.board[MAILBOX[i]];
             match piece {
                 WHITE_PAWN => {
                     white_mat += PAWN_VALUE;
@@ -778,6 +830,22 @@ impl Game {
 
     pub fn white_to_move(self: &Game) -> bool {
         self.state & 0xff == WHITE
+    }
+
+    pub fn fifty_move_draw(self: &Game) -> bool {
+        (self.state >> 24) & 127 >= 100
+    }
+
+    pub fn repetitions(self: &Game) -> usize {
+        let mut reps = 0;
+        let length = self.hash_history.len();
+        let fifty = (self.state >> 24) & 127;
+        for k in (length - fifty)..length {
+            if self.hash_history[k] == self.hash {
+                reps += 1;
+            }
+        }
+        reps
     }
 
 }

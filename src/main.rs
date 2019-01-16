@@ -8,6 +8,8 @@ use rustypawn::Game;
 use rustypawn::Move;
 use rustypawn::algebraic_to_move;
 
+const MATE_VALUE: isize = 100000;
+
 fn legal_moves(game: &mut Game) -> Vec<Move> {
     let mut result: Vec<Move> = Vec::new();
     let move_list = game.generate_moves();
@@ -190,6 +192,10 @@ impl<'a> Search<'a> {
             return 0;  // return value will be ignored
         }
 
+        if ply > 0 && self.game.repetitions() >= 2 {
+            return 0;
+        }
+
         if cfg!(noquiesce) {
             if ply >= depth {
                 return self.game.evaluate();
@@ -258,13 +264,15 @@ impl<'a> Search<'a> {
             follow_pv = false;
         }
 
-        if any_legal_moves {
-            alpha
-        } else if in_check {
-            -100000 + ply as isize
-        } else {
-            0
+        if !any_legal_moves {
+            return if in_check { -MATE_VALUE + ply as isize } else { 0 };
         }
+
+        if self.game.fifty_move_draw() {
+            return 0;
+        }
+
+        alpha
     }
 }
 
@@ -274,7 +282,7 @@ fn think(game: &mut Game, millis_to_think: u64, search_depth: usize, comms: &mut
     let mut search = Search::new(game, millis_to_think, comms);
 
     for depth in 1..search_depth {
-        search.search(-100000, 100000, 0, depth, true);
+        search.search(-MATE_VALUE, MATE_VALUE, 0, depth, true);
         if search.stop_thinking {
             break;
         }
