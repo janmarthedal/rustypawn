@@ -163,7 +163,7 @@ impl<'a> Search<'a> {
                     return beta;
                 }
                 alpha = score;
-
+                
                 self.tmp_pv.push(mv.clone());
                 self.tmp_pv.append(&mut self.pv[ply + 1]);
                 self.pv[ply].clear();
@@ -177,8 +177,10 @@ impl<'a> Search<'a> {
 
     pub fn search(self: &mut Search<'a>, alpha: isize, beta: isize,
                   ply: usize, depth: usize, follow_pv: bool) -> isize {
-        if ply >= depth {
-            return self.quiesce(alpha, beta, ply, follow_pv);
+        if cfg!(not(noquiesce)) {
+            if ply >= depth {
+                return self.quiesce(alpha, beta, ply, follow_pv);
+            }
         }
 
         self.nodes += 1;
@@ -188,6 +190,11 @@ impl<'a> Search<'a> {
             return 0;  // return value will be ignored
         }
 
+        if cfg!(noquiesce) {
+            if ply >= depth {
+                return self.game.evaluate();
+            }
+        }
         if ply == MAX_DEPTH - 1 {
             return self.game.evaluate();
         }
@@ -283,6 +290,9 @@ fn think(game: &mut Game, millis_to_think: u64, search_depth: usize, comms: &mut
 fn main() {
     let mut game = Game::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0").unwrap();
     let mut comms = Comms::new("comms.txt");
+
+    println!("Rustypawn");
+    println!("  quiesce: {}", if cfg!(noquiesce) { "no" } else { "yes"});
 
     loop {
         let mut input = String::new();
