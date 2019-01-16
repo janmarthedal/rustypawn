@@ -12,13 +12,10 @@ fn perft_sub(game: &mut Game, depth: usize) -> usize {
 
     let mut result = 0;
     for mv in &move_list {
-        match game.make_move(&mv) {
-            Some(umv) => {
-                let count_sub = perft_sub(game, depth - 1);
-                game.unmake_move(&mv, umv);
-                result += count_sub;
-            },
-            None => {}
+        if game.make_move(&mv) {
+            let count_sub = perft_sub(game, depth - 1);
+            game.unmake_move(&mv);
+            result += count_sub;
         }
     }
 

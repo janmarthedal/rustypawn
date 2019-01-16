@@ -67,7 +67,10 @@ impl Move {
     }
 }
 
-type UnMove = u64;  // captured << 32 | state
+struct HistoryItem {
+    unmove: u64,  // captured << 32 | state
+    hash: u64,
+}
 
 pub struct Game {
     board: [usize; 120],
@@ -79,7 +82,7 @@ pub struct Game {
     castling_hashes: [u64; 16],
     ep_hashes: [u64; 8],
     hash: u64,
-    hash_history: Vec<u64>,
+    history: Vec<HistoryItem>,
 }
 
 const MAILBOX: [usize; 64] = [
@@ -241,7 +244,7 @@ impl Game {
                 h
             },
             hash: 0,
-            hash_history: Vec::new(),
+            history: Vec::new(),
         }
     }
 
@@ -654,7 +657,7 @@ impl Game {
         move_list
     }
 
-    pub fn make_move(self: &mut Game, mv: &Move) -> Option<UnMove> {
+    pub fn make_move(self: &mut Game, mv: &Move) -> bool {
         let from = mv.m & 0xff;
         let to = (mv.m >> 8) & 0xff;
         let promoted = (mv.m >> 16) & 0xff;
@@ -712,30 +715,34 @@ impl Game {
         }
 
         self.state = to_draw_ply << 24 | to_ep << 16 | to_castling << 8 | xside;
-        self.hash_history.push(self.hash);
-        let unmove = (captured as u64) << 32 | from_state as u64;
+        self.history.push(HistoryItem {
+            unmove: (captured as u64) << 32 | from_state as u64,
+            hash: self.hash
+        });
 
         if self.is_attacked_by(if side == WHITE { self.king_white } else { self.king_black }, xside) {
-            self.unmake_move(mv, unmove);
-            return Option::None;
+            self.unmake_move(mv);
+            return false;
         }
         self.set_hash();
 
-        return Option::Some(unmove);
+        true
     }
 
-    pub fn unmake_move(self: &mut Game, mv: &Move, umv: UnMove) {
+    pub fn unmake_move(self: &mut Game, mv: &Move) {
+        let HistoryItem { unmove, hash } = self.history.pop().unwrap();
+
         let from = mv.m & 0xff;
         let to = (mv.m >> 8) & 0xff;
         let promoted = (mv.m >> 16) & 0xff;
-        let captured = ((umv >> 32) & 0xff) as usize;
-        self.state = (umv & 0xffffffff) as usize;
+        let captured = ((unmove >> 32) & 0xff) as usize;
+        self.state = (unmove & 0xffffffff) as usize;
         let side = self.state & 0xff;
         let ep = (self.state >> 16) & 0xff;
         let piece = if promoted != EMPTY { PAWN | side } else { self.board[to] };
         self.board[from] = piece;
         self.board[to] = captured;
-        self.hash = self.hash_history.pop().unwrap();
+        self.hash = hash;
 
         if piece == PAWN | WHITE {
             if to == ep {
@@ -838,10 +845,10 @@ impl Game {
 
     pub fn repetitions(self: &Game) -> usize {
         let mut reps = 0;
-        let length = self.hash_history.len();
+        let length = self.history.len();
         let fifty = (self.state >> 24) & 127;
         for k in (length - fifty)..length {
-            if self.hash_history[k] == self.hash {
+            if self.history[k].hash == self.hash {
                 reps += 1;
             }
         }

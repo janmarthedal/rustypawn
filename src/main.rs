@@ -14,12 +14,9 @@ fn legal_moves(game: &mut Game) -> Vec<Move> {
     let mut result: Vec<Move> = Vec::new();
     let move_list = game.generate_moves();
     for mv in &move_list {
-        match game.make_move(mv) {
-            Some(umv) => {
-                game.unmake_move(mv, umv);
-                result.push(mv.clone());
-            },
-            None => {}
+        if game.make_move(mv) {
+            game.unmake_move(mv);
+            result.push(mv.clone());
         }
     }
     result
@@ -147,15 +144,14 @@ impl<'a> Search<'a> {
         }
 
         for mv in &moves {
-            let umv = match self.game.make_move(mv) {
-                Some(umv) => umv,
-                None => continue
-            };
+            if !self.game.make_move(mv) {
+                continue;
+            }
 
             self.pv[ply + 1].clear();    
             score = -self.quiesce(-beta, -alpha, ply + 1, follow_pv);
 
-            self.game.unmake_move(mv, umv);
+            self.game.unmake_move(mv);
 
             if self.stop_thinking {
                 return 0;  // return value will be ignored
@@ -229,16 +225,15 @@ impl<'a> Search<'a> {
         }
 
         for mv in &moves {
-            let umv = match self.game.make_move(mv) {
-                Some(umv) => umv,
-                None => continue
-            };
+            if !self.game.make_move(mv) {
+                continue;
+            }
             any_legal_moves = true;
 
             self.pv[ply + 1].clear();    
             let score = -self.search(-beta, -alpha, ply + 1, depth, follow_pv);
 
-            self.game.unmake_move(mv, umv);
+            self.game.unmake_move(mv);
 
             if self.stop_thinking {
                 return 0;  // return value will be ignored
