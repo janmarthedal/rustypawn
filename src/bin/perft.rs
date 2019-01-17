@@ -2,6 +2,7 @@ use std::time::Instant;
 extern crate rustypawn;
 
 use rustypawn::Game;
+use rustypawn::millis_since;
 
 fn perft_sub(game: &mut Game, depth: usize) -> usize {
     if depth == 0 {
@@ -104,13 +105,12 @@ fn run_perft(name: &str, fen: &str, depth: usize, verification: usize) {
 
 
 fn main() {
-    let now = Instant::now();
+    let start = Instant::now();
 
     run_perft("Initial position", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0", 5, 4865609);
     run_perft("Kiwipete", "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -", 4, 4085603);
     run_perft("Position 3", "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - -", 6, 11030083);
     run_perft("Position 6", "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10", 4, 3894594);
 
-    let elapsed = now.elapsed();
-    println!("Time: {} ms", 1000 * elapsed.as_secs() + elapsed.subsec_millis() as u64);
+    println!("Time: {} ms", millis_since(&start));
 }

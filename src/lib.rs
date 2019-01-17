@@ -1,4 +1,7 @@
 use rand::prelude::*;
+use std::io::Write;
+use std::fs::File;
+use std::time::Instant;
 
 const EMPTY: usize = 0;
 const PAWN: usize = 1;
@@ -111,6 +114,8 @@ const BISHOP_VALUE: isize = 300;
 const KNIGHT_VALUE: isize = 300;
 const ROOK_VALUE: isize = 500;
 const QUEEN_VALUE: isize = 900;
+pub const MAX_DEPTH: usize = 32;
+const MATE_VALUE: isize = 100000;
 
 const BISHOP_PCSQ: [isize; 64] = [
 	-10, -10, -10, -10, -10, -10, -10, -10,
@@ -855,4 +860,305 @@ impl Game {
         reps
     }
 
+}
+
+pub fn millis_since(time: &Instant) -> u64 {
+    let elapsed = time.elapsed();
+    return 1000 * elapsed.as_secs() + elapsed.subsec_millis() as u64;
+}
+
+pub struct Comms {
+    file: File
+}
+
+impl Comms {
+    pub fn new(name: &str) -> Comms {
+        Comms {
+            file: File::create(name).unwrap()
+        }
+    }
+    fn write(self: &mut Comms, prefix: &str, msg: &str) {
+        self.file.write_all(prefix.as_bytes()).unwrap();
+        self.file.write_all(msg.as_bytes()).unwrap();
+        self.file.write_all(b"\n").unwrap();
+    }
+    pub fn input(self: &mut Comms, msg: &str) {
+        self.write("> ", msg);
+    }
+    pub fn output<S: Into<String>>(self: &mut Comms, msg: S) {
+        let s = msg.into();
+        println!("{}", s);
+        self.write("< ", &s[..]);
+    }
+    pub fn fatal<S: Into<String>>(self: &mut Comms, msg: S) -> ! {
+        let s = msg.into();
+        self.write("! ", &s[..]);
+        panic!(s);
+    }
+    pub fn debug<S: Into<String>>(self: &mut Comms, msg: S) {
+        let s = msg.into();
+        self.write("- ", &s[..]);
+    }
+}
+
+pub struct Search<'a> {
+    game: &'a mut Game,
+    comms: &'a mut Comms,
+    nodes: usize,
+    start_time: Instant,
+    max_millis: u64,
+    pv: Vec<Vec<Move>>,
+    tmp_pv: Vec<Move>,
+    stop_thinking: bool
+}
+
+impl<'a> Search<'a> {
+
+    pub fn new(game: &'a mut Game, max_millis: u64, comms: &'a mut Comms) -> Search<'a> {
+        let mut pv: Vec<Vec<Move>> = Vec::with_capacity(MAX_DEPTH);
+        for _ in 0..MAX_DEPTH {
+            pv.push(Vec::with_capacity(MAX_DEPTH));
+        }
+        Search {
+            game,
+            comms,
+            nodes: 0,
+            start_time: Instant::now(),
+            max_millis,
+            pv,
+            tmp_pv: Vec::with_capacity(MAX_DEPTH),
+            stop_thinking: false
+        }
+    }
+
+    pub fn quiesce(self: &mut Search<'a>, alpha: isize, beta: isize,
+                   ply: usize, follow_pv: bool) -> isize {
+        self.nodes += 1;
+
+        if self.nodes % 1024 == 0 && millis_since(&self.start_time) >= self.max_millis {
+            self.stop_thinking = true;
+            return 0;  // return value will be ignored
+        }
+
+        if ply == MAX_DEPTH - 1 {
+            return self.game.evaluate();
+        }
+
+        let mut score = self.game.evaluate();
+        let mut alpha = alpha;
+
+        if score >= beta {
+            return beta;
+        }
+        if score > alpha {
+            alpha = score;
+        }
+
+        let mut moves = self.game.capture_moves();
+        let mut follow_pv = follow_pv;
+
+        if follow_pv {
+            if ply < self.pv[0].len() {
+                if let Some(i) = moves.iter().position(|m| *m == self.pv[0][ply]) {
+                    moves.swap(0, i);
+                } else {
+                    follow_pv = false;
+                }
+            } else {
+                follow_pv = false;
+            }
+        }
+
+        for mv in &moves {
+            if !self.game.make_move(mv) {
+                continue;
+            }
+
+            self.pv[ply + 1].clear();    
+            score = -self.quiesce(-beta, -alpha, ply + 1, follow_pv);
+
+            self.game.unmake_move(mv);
+
+            if self.stop_thinking {
+                return 0;  // return value will be ignored
+            }
+            if score > alpha {
+                if score >= beta {
+                    return beta;
+                }
+                alpha = score;
+                
+                self.tmp_pv.push(mv.clone());
+                self.tmp_pv.append(&mut self.pv[ply + 1]);
+                self.pv[ply].clear();
+                self.pv[ply].append(&mut self.tmp_pv);
+            }
+            follow_pv = false;
+        }
+
+        alpha
+    }
+
+    pub fn search(self: &mut Search<'a>, alpha: isize, beta: isize,
+                  ply: usize, depth: usize, follow_pv: bool) -> isize {
+        if cfg!(not(noquiesce)) {
+            if ply >= depth {
+                return self.quiesce(alpha, beta, ply, follow_pv);
+            }
+        }
+
+        self.nodes += 1;
+
+        if self.nodes % 1024 == 0 && millis_since(&self.start_time) >= self.max_millis {
+            self.stop_thinking = true;
+            return 0;  // return value will be ignored
+        }
+
+        if ply > 0 && self.game.repetitions() >= 2 {
+            return 0;
+        }
+
+        if cfg!(noquiesce) {
+            if ply >= depth {
+                return self.game.evaluate();
+            }
+        }
+        if ply == MAX_DEPTH - 1 {
+            return self.game.evaluate();
+        }
+
+        let mut moves = self.game.generate_moves();
+        let mut any_legal_moves = false;
+        let mut alpha = alpha;
+        let mut depth = depth;
+        let mut follow_pv = follow_pv;
+        let in_check = self.game.in_check();
+
+        if in_check {
+            depth += 1;
+        }
+
+        if follow_pv {
+            if ply < self.pv[0].len() {
+                if let Some(i) = moves.iter().position(|m| *m == self.pv[0][ply]) {
+                    moves.swap(0, i);
+                } else {
+                    follow_pv = false;
+                }
+            } else {
+                follow_pv = false;
+            }
+        }
+
+        for mv in &moves {
+            if !self.game.make_move(mv) {
+                continue;
+            }
+            any_legal_moves = true;
+
+            self.pv[ply + 1].clear();    
+            let score = -self.search(-beta, -alpha, ply + 1, depth, follow_pv);
+
+            self.game.unmake_move(mv);
+
+            if self.stop_thinking {
+                return 0;  // return value will be ignored
+            }
+            if score >= beta {
+                return beta;
+            }
+            if score > alpha {
+                alpha = score;
+                self.tmp_pv.push(mv.clone());
+                self.tmp_pv.append(&mut self.pv[ply + 1]);
+                self.pv[ply].clear();
+                self.pv[ply].append(&mut self.tmp_pv);
+                if ply == 0 {
+                    let millis = millis_since(&self.start_time);
+                    let nps = if millis > 0 { 1000 * self.nodes as u64 / millis } else { 0 };
+                    let msg = format!("info depth {} score cp {} nodes {} time {} nps {} pv {}",
+                        depth, score, self.nodes, millis, nps,
+                        self.pv[0].iter().map(|m| m.to_algebraic()).collect::<Vec<String>>().join(" "));
+                    self.comms.output(msg);
+                }
+            }
+            follow_pv = false;
+        }
+
+        if !any_legal_moves {
+            return if in_check { -MATE_VALUE + ply as isize } else { 0 };
+        }
+
+        if self.game.fifty_move_draw() {
+            return 0;
+        }
+
+        alpha
+    }
+}
+
+pub fn think(game: &mut Game, millis_to_think: u64, search_depth: usize, comms: &mut Comms) -> Option<Move> {
+    let mut search = Search::new(game, millis_to_think, comms);
+
+    for depth in 1..search_depth {
+        search.search(-MATE_VALUE, MATE_VALUE, 0, depth, true);
+        if search.stop_thinking {
+            break;
+        }
+    }
+
+    if search.pv[0].len() > 0 {
+        Some(search.pv[0][0].clone())
+    } else {
+        None
+    }
+}
+
+fn legal_moves(game: &mut Game) -> Vec<Move> {
+    let mut result: Vec<Move> = Vec::new();
+    let move_list = game.generate_moves();
+    for mv in &move_list {
+        if game.make_move(mv) {
+            game.unmake_move(mv);
+            result.push(mv.clone());
+        }
+    }
+    result
+}
+
+pub fn make_move_algebraic(game: &mut Game, input_move: &str) {
+    let input_move = algebraic_to_move(input_move);
+    let moves = legal_moves(game);
+    for mv in &moves {
+        if *mv == input_move {
+            game.make_move(mv);
+            return;
+        }
+    }
+    panic!("make_move_algebraic");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn three_fold_repetition() {
+        let mut game = Game::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0").unwrap();
+        make_move_algebraic(&mut game, "g1f3");
+        make_move_algebraic(&mut game, "b8c6");
+        make_move_algebraic(&mut game, "f3g1");
+        make_move_algebraic(&mut game, "c6b8");
+        assert_eq!(game.repetitions(), 1);
+        make_move_algebraic(&mut game, "g1f3");
+        make_move_algebraic(&mut game, "b8c6");
+        make_move_algebraic(&mut game, "f3g1");
+        make_move_algebraic(&mut game, "c6b8");
+        assert_eq!(game.repetitions(), 2);
+        make_move_algebraic(&mut game, "g1f3");
+        make_move_algebraic(&mut game, "b8c6");
+        make_move_algebraic(&mut game, "f3g1");
+        make_move_algebraic(&mut game, "c6b8");
+        assert_eq!(game.repetitions(), 3);
+    }
 }
