@@ -1,6 +1,7 @@
 use rand::prelude::*;
 use std::time::Instant;
 use std::cmp::Ordering;
+use std::cmp;
 
 const EMPTY: usize = 0;
 const PAWN: usize = 1;
@@ -134,6 +135,17 @@ const QUEEN_VALUE: isize = 900;
 pub const MAX_DEPTH: usize = 32;
 const MATE_VALUE: isize = 100000;
 
+const PAWN_PCSQ: [isize; 64] = [
+	  0,   0,   0,   0,   0,   0,   0,   0,
+	  5,  10,  15,  20,  20,  15,  10,   5,
+	  4,   8,  12,  16,  16,  12,   8,   4,
+	  3,   6,   9,  12,  12,   9,   6,   3,
+	  2,   4,   6,   8,   8,   6,   4,   2,
+	  1,   2,   3, -10, -10,   3,   2,   1,
+	  0,   0,   0, -40, -40,   0,   0,   0,
+	  0,   0,   0,   0,   0,   0,   0,   0
+];
+
 const BISHOP_PCSQ: [isize; 64] = [
 	-10, -10, -10, -10, -10, -10, -10, -10,
 	-10,   0,   0,   0,   0,   0,   0, -10,
@@ -246,6 +258,58 @@ fn add_promotion(move_list: &mut Vec<Move>, from: usize, to: usize) {
     move_list.push(KNIGHT << 16 | to << 8 | from);
     move_list.push(ROOK << 16 | to << 8 | from);
     move_list.push(QUEEN << 16 | to << 8 | from);
+}
+
+const DOUBLED_PAWN_PENALTY: isize = 10;
+const ISOLATED_PAWN_PENALTY: isize = 20;
+const BACKWARDS_PAWN_PENALTY: isize = 8;
+const PASSED_PAWN_BONUS: isize = 20;
+// const ROOK_SEMI_OPEN_FILE_BONUS: isize = 10;
+// const ROOK_OPEN_FILE_BONUS: isize = 15;
+// const ROOK_ON_SEVENTH_BONUS: isize = 20;
+
+fn evaluate_white_pawn(i: usize, white_pawn_rank: &[usize; 10], black_pawn_rank: &[usize; 10]) -> isize {
+    let f = i % 8 + 1;
+    let r = i / 8;
+    let mut s = PAWN_PCSQ[i];
+
+    if white_pawn_rank[f] > r {
+        s -= DOUBLED_PAWN_PENALTY;
+    }
+
+    if white_pawn_rank[f - 1] == 0 && white_pawn_rank[f + 1] == 0 {
+        s -= ISOLATED_PAWN_PENALTY;
+    } else if white_pawn_rank[f - 1] < r && white_pawn_rank[f + 1] < r {
+        s -= BACKWARDS_PAWN_PENALTY;
+    }
+
+    if black_pawn_rank[f - 1] >= r && black_pawn_rank[f] >= r && black_pawn_rank[f + 1] >= r {
+        s += (7 - r as isize) * PASSED_PAWN_BONUS;
+    }
+
+    s
+}
+
+fn evaluate_black_pawn(i: usize, white_pawn_rank: &[usize; 10], black_pawn_rank: &[usize; 10]) -> isize {
+    let f = i % 8 + 1;
+    let r = i / 8;
+    let mut s = PAWN_PCSQ[FLIP[i]];
+
+    if black_pawn_rank[f] < r {
+        s -= DOUBLED_PAWN_PENALTY;
+    }
+
+    if black_pawn_rank[f - 1] == 7 && black_pawn_rank[f + 1] == 7 {
+        s -= ISOLATED_PAWN_PENALTY;
+    } else if black_pawn_rank[f - 1] > r && black_pawn_rank[f + 1] > r {
+        s -= BACKWARDS_PAWN_PENALTY;
+    }
+
+    if white_pawn_rank[f - 1] <= r && white_pawn_rank[f] <= r && white_pawn_rank[f + 1] <= r {
+        s += r as isize * PASSED_PAWN_BONUS;
+    }
+
+    s
 }
 
 impl Game {
@@ -831,57 +895,101 @@ impl Game {
     }
 
     pub fn evaluate(self: &Game) -> isize {
-        let mut white_mat: isize = 0;
-        let mut black_mat: isize = 0;
+        let mut white_pawn_mat: isize = 0;
+        let mut white_piece_mat: isize = 0;
+        let mut black_pawn_mat: isize = 0;
+        let mut black_piece_mat: isize = 0;
+        let mut white_pawn_rank: [usize; 10] = [0; 10];
+        let mut black_pawn_rank: [usize; 10] = [7; 10];
 
         for i in 0..64 {
-            let piece = self.board[MAP8X8[i]];
+            let pos = MAP8X8[i];
+            let piece = self.board[pos];
             match piece {
                 WHITE_PAWN => {
-                    white_mat += PAWN_VALUE;
+                    white_pawn_mat += PAWN_VALUE;
+                    let f = pos % 10;
+                    white_pawn_rank[f] = cmp::max(white_pawn_rank[f], i / 8);
                 },
                 WHITE_BISHOP => {
-                    white_mat += BISHOP_VALUE;
-                    white_mat += BISHOP_PCSQ[i];
+                    white_piece_mat += BISHOP_VALUE;
                 },
                 WHITE_KNIGHT => {
-                    white_mat += KNIGHT_VALUE;
-                    white_mat += KNIGHT_PCSQ[i];
+                    white_piece_mat += KNIGHT_VALUE;
                 },
                 WHITE_ROOK => {
-                    white_mat += ROOK_VALUE;
+                    white_piece_mat += ROOK_VALUE;
                 },
                 WHITE_QUEEN => {
-                    white_mat += QUEEN_VALUE;
+                    white_piece_mat += QUEEN_VALUE;
                 },
-                WHITE_KING => {},
                 BLACK_PAWN => {
-                    black_mat += PAWN_VALUE;
+                    black_pawn_mat += PAWN_VALUE;
+                    let f = pos % 10;
+                    black_pawn_rank[f] = cmp::min(black_pawn_rank[f], i / 8);
                 },
                 BLACK_BISHOP => {
-                    black_mat += BISHOP_VALUE;
-                    black_mat += BISHOP_PCSQ[FLIP[i]];
+                    black_piece_mat += BISHOP_VALUE;
                 },
                 BLACK_KNIGHT => {
-                    black_mat += KNIGHT_VALUE;
-                    black_mat += KNIGHT_PCSQ[FLIP[i]];
+                    black_piece_mat += KNIGHT_VALUE;
                 },
                 BLACK_ROOK => {
-                    black_mat += ROOK_VALUE;
+                    black_piece_mat += ROOK_VALUE;
                 },
                 BLACK_QUEEN => {
-                    black_mat += QUEEN_VALUE;
+                    black_piece_mat += QUEEN_VALUE;
                 },
-                BLACK_KING => {},
+                _ => continue
+            };
+        }
+
+        let mut white_score: isize = white_piece_mat + white_pawn_mat;
+        let mut black_score: isize = black_piece_mat + black_pawn_mat;
+
+        for i in 0..64 {
+            let pos = MAP8X8[i];
+            let piece = self.board[pos];
+            match piece {
+                WHITE_PAWN => {
+                    white_score += evaluate_white_pawn(i, &white_pawn_rank, &black_pawn_rank);
+                },
+                WHITE_BISHOP => {
+                    white_score += BISHOP_PCSQ[i];
+                },
+                WHITE_KNIGHT => {
+                    white_score += KNIGHT_PCSQ[i];
+                },
+                /*WHITE_ROOK => {
+                    white_piece_mat += ROOK_VALUE;
+                },
+                WHITE_QUEEN => {
+                    white_piece_mat += QUEEN_VALUE;
+                },*/
+                BLACK_PAWN => {
+                    black_score += evaluate_black_pawn(i, &white_pawn_rank, &black_pawn_rank);
+                },
+                BLACK_BISHOP => {
+                    black_score += BISHOP_PCSQ[FLIP[i]];
+                },
+                BLACK_KNIGHT => {
+                    black_score += KNIGHT_PCSQ[FLIP[i]];
+                },
+                /*BLACK_ROOK => {
+                    black_piece_mat += ROOK_VALUE;
+                },
+                BLACK_QUEEN => {
+                    black_piece_mat += QUEEN_VALUE;
+                },*/
                 _ => continue
             };
         }
 
         let side = self.state & 0xff;
         if side == WHITE {
-            white_mat - black_mat
+            white_score - black_score
         } else {
-            black_mat - white_mat
+            black_score - white_score
         }
     }
 
