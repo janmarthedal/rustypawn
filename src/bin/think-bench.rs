@@ -25,7 +25,7 @@ fn main() {
 
     let start = Instant::now();
 
-    let mv = match think(&mut game, 1 << 20, 5, &mut comms) {
+    let mv = match think(&mut game, 1 << 20, 6, &mut comms) {
         Some(m) => m,
         None => panic!("No legal move")
     };

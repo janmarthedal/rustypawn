@@ -90,6 +90,21 @@ pub struct Game {
     history: Vec<HistoryItem>,
 }
 
+const REV8X8: [usize; 120] = [
+    99, 99, 99, 99, 99, 99, 99, 99, 99, 99,
+	99, 99, 99, 99, 99, 99, 99, 99, 99, 99,
+	99,  0,  1,  2,  3,  4,  5,  6,  7, 99,
+	99,  8,  9, 10, 11, 12, 13, 14, 15, 99,
+	99, 16, 17, 18, 19, 20, 21, 22, 23, 99,
+	99, 24, 25, 26, 27, 28, 29, 30, 31, 99,
+	99, 32, 33, 34, 35, 36, 37, 38, 39, 99,
+	99, 40, 41, 42, 43, 44, 45, 46, 47, 99,
+	99, 48, 49, 50, 51, 52, 53, 54, 55, 99,
+	99, 56, 57, 58, 59, 60, 61, 62, 63, 99,
+	99, 99, 99, 99, 99, 99, 99, 99, 99, 99,
+	99, 99, 99, 99, 99, 99, 99, 99, 99, 99
+];
+
 const MAP8X8: [usize; 64] = [
     21, 22, 23, 24, 25, 26, 27, 28,
     31, 32, 33, 34, 35, 36, 37, 38,
@@ -792,21 +807,21 @@ impl Game {
         }
     }
 
-    pub fn score_moves(self: &Game, move_list: &Vec<Move>, top_move: Move) -> Vec<MoveScore> {
+    pub fn score_moves(self: &Game, move_list: &Vec<Move>, cutoff_moves: &[usize; 64 * 64], top_move: Move) -> Vec<MoveScore> {
         let mut ms: Vec<MoveScore> = Vec::with_capacity(move_list.capacity());
 
         for (index, mv) in move_list.iter().enumerate() {
             let score = if *mv == top_move {
                 1000000000
             } else {
-                let to = (mv >> 8) & 0xffusize;
+                let from: usize = mv & 0xff;
+                let to: usize = (mv >> 8) & 0xffusize;
                 let captured = self.board[to] & PIECE_MASK;
                 if captured != EMPTY {
-                    let from = mv & 0xff;
                     let piece = self.board[from] & PIECE_MASK;
                     1000000usize + captured * 10usize - piece
                 } else {
-                    0
+                    cutoff_moves[REV8X8[from] * 64 + REV8X8[to]]
                 }
             };
             ms.push(MoveScore { score, index });
@@ -920,7 +935,8 @@ pub struct Search<'a, T: ThinkInfo> {
     max_millis: u64,
     pv: Vec<Vec<Move>>,
     tmp_pv: Vec<Move>,
-    stop_thinking: bool
+    stop_thinking: bool,
+    cutoff_moves: [usize; 64 * 64],
 }
 
 impl<'a, T: ThinkInfo> Search<'a, T> {
@@ -938,7 +954,8 @@ impl<'a, T: ThinkInfo> Search<'a, T> {
             max_millis,
             pv,
             tmp_pv: Vec::with_capacity(MAX_DEPTH + 1),
-            stop_thinking: false
+            stop_thinking: false,
+            cutoff_moves: [0; 64 * 64],
         }
     }
 
@@ -967,7 +984,7 @@ impl<'a, T: ThinkInfo> Search<'a, T> {
 
         let moves = self.game.capture_moves();
         let mut follow_pv = follow_pv && ply < self.pv[0].len();
-        let mut moves_scored = self.game.score_moves(&moves, if follow_pv { self.pv[0][ply] } else { DUMMY_MOVE });
+        let mut moves_scored = self.game.score_moves(&moves, &self.cutoff_moves, if follow_pv { self.pv[0][ply] } else { DUMMY_MOVE });
 
         moves_scored.sort_unstable();
 
@@ -1044,7 +1061,7 @@ impl<'a, T: ThinkInfo> Search<'a, T> {
         }
 
         let mut follow_pv = follow_pv && ply < self.pv[0].len();
-        let mut moves_scored = self.game.score_moves(&moves, if follow_pv { self.pv[0][ply] } else { DUMMY_MOVE });
+        let mut moves_scored = self.game.score_moves(&moves, &self.cutoff_moves, if follow_pv { self.pv[0][ply] } else { DUMMY_MOVE });
 
         moves_scored.sort_unstable();
 
@@ -1069,10 +1086,14 @@ impl<'a, T: ThinkInfo> Search<'a, T> {
             }
             if score > alpha {
                 alpha = score;
+
+                self.cutoff_moves[REV8X8[mv & 0xff] * 64 + REV8X8[(mv >> 8) & 0xff]] += MAX_DEPTH - ply;
+
                 self.tmp_pv.push(mv);
                 self.tmp_pv.append(&mut self.pv[ply + 1]);
                 self.pv[ply].clear();
                 self.pv[ply].append(&mut self.tmp_pv);
+
                 if ply == 0 {
                     let mate_in: isize = if score <= -(MATE_VALUE - MAX_DEPTH as isize) {
                         -(MATE_VALUE + score) / 2
