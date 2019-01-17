@@ -86,7 +86,7 @@ pub struct Game {
     history: Vec<HistoryItem>,
 }
 
-const MAILBOX: [usize; 64] = [
+const MAP8X8: [usize; 64] = [
     21, 22, 23, 24, 25, 26, 27, 28,
     31, 32, 33, 34, 35, 36, 37, 38,
     41, 42, 43, 44, 45, 46, 47, 48,
@@ -192,7 +192,7 @@ pub fn algebraic_to_move(s: &str) -> Move {
         _ => panic!("algebraic_to_move: illegal promotion")
     };
     Move {
-        m: promoted << 16 | MAILBOX[to] << 8 | MAILBOX[from]
+        m: promoted << 16 | MAP8X8[to] << 8 | MAP8X8[from]
     }
 }
 
@@ -224,7 +224,7 @@ impl Game {
         Game {
             board: {
                 let mut b: [usize; 120] = [OFF_BOARD; 120];
-                for i in 0..64 { b[MAILBOX[i]] = EMPTY; }
+                for i in 0..64 { b[MAP8X8[i]] = EMPTY; }
                 b
             },
             state: 0,
@@ -270,7 +270,7 @@ impl Game {
                     };
                     match PIECE_ASCII.find(c) {
                         Option::Some(idx) => {
-                            game.board[MAILBOX[pos]] = PIECE_VALUES[idx];
+                            game.board[MAP8X8[pos]] = PIECE_VALUES[idx];
                             pos += 1;
                         },
                         Option::None => return Result::Err("Illegal FEN character")
@@ -307,7 +307,7 @@ impl Game {
             Some(s) => match s {
                 "-" => 0,
                 _ => match algebraic_to_pos(s) {
-                    Some(p) => MAILBOX[p],
+                    Some(p) => MAP8X8[p],
                     None => return Result::Err("Illegal en passant string")
                 }
             },
@@ -341,7 +341,7 @@ impl Game {
     fn set_hash(self: &mut Game) {
         let mut hash: u64 = 0;
         for i in 0..64 {
-            let piece = self.board[MAILBOX[i]];
+            let piece = self.board[MAP8X8[i]];
             if piece != EMPTY {
                 let mut n = (piece & PIECE_MASK) - 1;
                 if (piece & COLOR_MASK) == BLACK {
@@ -419,7 +419,7 @@ impl Game {
 
         let mut move_list = Vec::with_capacity(218);
         for i in 0..64 {
-            let from = MAILBOX[i];
+            let from = MAP8X8[i];
             let piece = self.board[from];
             if piece & COLOR_MASK == side {
                 match piece & PIECE_MASK {
@@ -566,7 +566,7 @@ impl Game {
 
         let mut move_list = Vec::with_capacity(218);
         for i in 0..64 {
-            let from = MAILBOX[i];
+            let from = MAP8X8[i];
             let piece = self.board[from];
             if piece & COLOR_MASK == side {
                 match piece & PIECE_MASK {
@@ -781,7 +781,7 @@ impl Game {
         let mut black_mat: isize = 0;
 
         for i in 0..64 {
-            let piece = self.board[MAILBOX[i]];
+            let piece = self.board[MAP8X8[i]];
             match piece {
                 WHITE_PAWN => {
                     white_mat += PAWN_VALUE;
