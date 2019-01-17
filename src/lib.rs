@@ -850,6 +850,9 @@ impl Game {
         let mut reps = 0;
         let length = self.history.len();
         let fifty = (self.state >> 24) & 127;
+        if fifty > length {
+            return 0;
+        }
         for k in (length - fifty)..length {
             if self.history[k].hash == self.hash {
                 reps += 1;
