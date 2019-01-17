@@ -2,6 +2,7 @@ use std::time::Instant;
 extern crate rustypawn;
 
 use rustypawn::Game;
+use rustypawn::MoveTrait;
 use rustypawn::ThinkInfo;
 use rustypawn::think;
 use rustypawn::millis_since;

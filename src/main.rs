@@ -3,6 +3,7 @@ use std::io::Write;
 use std::fs::File;
 
 use rustypawn::ThinkInfo;
+use rustypawn::MoveTrait;
 use rustypawn::Game;
 use rustypawn::MAX_DEPTH;
 use rustypawn::make_move_algebraic;
