@@ -908,7 +908,8 @@ pub fn millis_since(time: &Instant) -> u64 {
 }
 
 pub trait ThinkInfo {
-    fn think_info(&mut self, depth: usize, score: isize, node_count: usize, millis: u64, moves: &Vec<String>);
+    fn think_info(&mut self, depth: usize, score: isize, mate_in: isize, node_count: usize,
+                  millis: u64, moves: &Vec<String>);
 }
 
 pub struct Search<'a, T: ThinkInfo> {
@@ -1073,9 +1074,16 @@ impl<'a, T: ThinkInfo> Search<'a, T> {
                 self.pv[ply].clear();
                 self.pv[ply].append(&mut self.tmp_pv);
                 if ply == 0 {
+                    let mate_in: isize = if score <= -(MATE_VALUE - MAX_DEPTH as isize) {
+                        -(MATE_VALUE + score) / 2
+                    } else if score >= (MATE_VALUE - MAX_DEPTH as isize) {
+                        (MATE_VALUE - score) / 2
+                    } else {
+                        0
+                    };
                     let millis = millis_since(&self.start_time);
                     let moves = self.pv[0].iter().map(|m| m.to_algebraic()).collect::<Vec<String>>();
-                    self.comms.think_info(depth, score, self.nodes, millis, &moves);
+                    self.comms.think_info(depth, score, mate_in, self.nodes, millis, &moves);
                 }
             }
             follow_pv = false;
@@ -1097,8 +1105,11 @@ pub fn think<T: ThinkInfo>(game: &mut Game, millis_to_think: u64, search_depth: 
     let mut search = Search::new(game, millis_to_think, comms);
 
     for depth in 1..(search_depth + 1) {
-        search.search(-MATE_VALUE, MATE_VALUE, 0, depth, true);
+        let score = search.search(-MATE_VALUE, MATE_VALUE, 0, depth, true);
         if search.stop_thinking {
+            break;
+        }
+        if score >= MATE_VALUE - MAX_DEPTH as isize {
             break;
         }
     }
