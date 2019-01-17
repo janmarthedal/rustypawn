@@ -982,7 +982,9 @@ impl<'a, T: ThinkInfo> Search<'a, T> {
             return 0;  // return value will be ignored
         }
 
-        if ply > 0 && self.game.repetitions() >= 2 {
+        if ply > 0 && self.game.repetitions() > 0 {
+            // three-fold draw is not until the same position has been seen two
+            // times before, but repeating a position is looking for a draw...
             return 0;
         }
 
