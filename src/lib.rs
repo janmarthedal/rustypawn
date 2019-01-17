@@ -899,6 +899,12 @@ impl Comms {
         let s = msg.into();
         self.write("- ", &s[..]);
     }
+    pub fn think_info(self: &mut Comms, depth: usize, score: isize, node_count: usize, millis: u64, moves: &Vec<String>) {
+        let nps = if millis > 0 { 1000 * node_count as u64 / millis } else { 0 };
+        let msg = format!("info depth {} score cp {} nodes {} time {} nps {} pv {}",
+            depth, score, node_count, millis, nps, moves.join(" "));
+        self.output(msg);
+    }
 }
 
 pub struct Search<'a> {
@@ -1075,11 +1081,8 @@ impl<'a> Search<'a> {
                 self.pv[ply].append(&mut self.tmp_pv);
                 if ply == 0 {
                     let millis = millis_since(&self.start_time);
-                    let nps = if millis > 0 { 1000 * self.nodes as u64 / millis } else { 0 };
-                    let msg = format!("info depth {} score cp {} nodes {} time {} nps {} pv {}",
-                        depth, score, self.nodes, millis, nps,
-                        self.pv[0].iter().map(|m| m.to_algebraic()).collect::<Vec<String>>().join(" "));
-                    self.comms.output(msg);
+                    let moves = self.pv[0].iter().map(|m| m.to_algebraic()).collect::<Vec<String>>();
+                    self.comms.think_info(depth, score, self.nodes, millis, &moves);
                 }
             }
             follow_pv = false;
