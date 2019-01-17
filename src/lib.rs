@@ -1,6 +1,4 @@
 use rand::prelude::*;
-use std::io::Write;
-use std::fs::File;
 use std::time::Instant;
 
 const EMPTY: usize = 0;
@@ -867,49 +865,13 @@ pub fn millis_since(time: &Instant) -> u64 {
     return 1000 * elapsed.as_secs() + elapsed.subsec_millis() as u64;
 }
 
-pub struct Comms {
-    file: File
+pub trait ThinkInfo {
+    fn think_info(&mut self, depth: usize, score: isize, node_count: usize, millis: u64, moves: &Vec<String>);
 }
 
-impl Comms {
-    pub fn new(name: &str) -> Comms {
-        Comms {
-            file: File::create(name).unwrap()
-        }
-    }
-    fn write(self: &mut Comms, prefix: &str, msg: &str) {
-        self.file.write_all(prefix.as_bytes()).unwrap();
-        self.file.write_all(msg.as_bytes()).unwrap();
-        self.file.write_all(b"\n").unwrap();
-    }
-    pub fn input(self: &mut Comms, msg: &str) {
-        self.write("> ", msg);
-    }
-    pub fn output<S: Into<String>>(self: &mut Comms, msg: S) {
-        let s = msg.into();
-        println!("{}", s);
-        self.write("< ", &s[..]);
-    }
-    pub fn fatal<S: Into<String>>(self: &mut Comms, msg: S) -> ! {
-        let s = msg.into();
-        self.write("! ", &s[..]);
-        panic!(s);
-    }
-    pub fn debug<S: Into<String>>(self: &mut Comms, msg: S) {
-        let s = msg.into();
-        self.write("- ", &s[..]);
-    }
-    pub fn think_info(self: &mut Comms, depth: usize, score: isize, node_count: usize, millis: u64, moves: &Vec<String>) {
-        let nps = if millis > 0 { 1000 * node_count as u64 / millis } else { 0 };
-        let msg = format!("info depth {} score cp {} nodes {} time {} nps {} pv {}",
-            depth, score, node_count, millis, nps, moves.join(" "));
-        self.output(msg);
-    }
-}
-
-pub struct Search<'a> {
+pub struct Search<'a, T: ThinkInfo> {
     game: &'a mut Game,
-    comms: &'a mut Comms,
+    comms: &'a mut T,
     nodes: usize,
     start_time: Instant,
     max_millis: u64,
@@ -918,9 +880,9 @@ pub struct Search<'a> {
     stop_thinking: bool
 }
 
-impl<'a> Search<'a> {
+impl<'a, T: ThinkInfo> Search<'a, T> {
 
-    pub fn new(game: &'a mut Game, max_millis: u64, comms: &'a mut Comms) -> Search<'a> {
+    pub fn new(game: &'a mut Game, max_millis: u64, comms: &'a mut T) -> Search<'a, T> {
         let mut pv: Vec<Vec<Move>> = Vec::with_capacity(MAX_DEPTH);
         for _ in 0..MAX_DEPTH {
             pv.push(Vec::with_capacity(MAX_DEPTH));
@@ -937,7 +899,7 @@ impl<'a> Search<'a> {
         }
     }
 
-    pub fn quiesce(self: &mut Search<'a>, alpha: isize, beta: isize,
+    pub fn quiesce(self: &mut Search<'a, T>, alpha: isize, beta: isize,
                    ply: usize, follow_pv: bool) -> isize {
         self.nodes += 1;
 
@@ -1005,7 +967,7 @@ impl<'a> Search<'a> {
         alpha
     }
 
-    pub fn search(self: &mut Search<'a>, alpha: isize, beta: isize,
+    pub fn search(self: &mut Search<'a, T>, alpha: isize, beta: isize,
                   ply: usize, depth: usize, follow_pv: bool) -> isize {
         if cfg!(not(noquiesce)) {
             if ply >= depth {
@@ -1100,7 +1062,7 @@ impl<'a> Search<'a> {
     }
 }
 
-pub fn think(game: &mut Game, millis_to_think: u64, search_depth: usize, comms: &mut Comms) -> Option<Move> {
+pub fn think<T: ThinkInfo>(game: &mut Game, millis_to_think: u64, search_depth: usize, comms: &mut T) -> Option<Move> {
     let mut search = Search::new(game, millis_to_think, comms);
 
     for depth in 1..search_depth {

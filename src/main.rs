@@ -1,10 +1,55 @@
 use std::io;
+use std::io::Write;
+use std::fs::File;
 
-use rustypawn::Comms;
+use rustypawn::ThinkInfo;
 use rustypawn::Game;
 use rustypawn::MAX_DEPTH;
 use rustypawn::make_move_algebraic;
 use rustypawn::think;
+
+struct Comms {
+    file: File
+}
+
+impl Comms {
+    pub fn new(name: &str) -> Comms {
+        Comms {
+            file: File::create(name).unwrap()
+        }
+    }
+    fn write(self: &mut Comms, prefix: &str, msg: &str) {
+        self.file.write_all(prefix.as_bytes()).unwrap();
+        self.file.write_all(msg.as_bytes()).unwrap();
+        self.file.write_all(b"\n").unwrap();
+    }
+    pub fn input(self: &mut Comms, msg: &str) {
+        self.write("> ", msg);
+    }
+    pub fn output<S: Into<String>>(self: &mut Comms, msg: S) {
+        let s = msg.into();
+        println!("{}", s);
+        self.write("< ", &s[..]);
+    }
+    pub fn fatal<S: Into<String>>(self: &mut Comms, msg: S) -> ! {
+        let s = msg.into();
+        self.write("! ", &s[..]);
+        panic!(s);
+    }
+    pub fn debug<S: Into<String>>(self: &mut Comms, msg: S) {
+        let s = msg.into();
+        self.write("- ", &s[..]);
+    }
+}
+
+impl ThinkInfo for Comms {
+    fn think_info(self: &mut Comms, depth: usize, score: isize, node_count: usize, millis: u64, moves: &Vec<String>) {
+        let nps = if millis > 0 { 1000 * node_count as u64 / millis } else { 0 };
+        let msg = format!("info depth {} score cp {} nodes {} time {} nps {} pv {}",
+            depth, score, node_count, millis, nps, moves.join(" "));
+        self.output(msg);
+    }
+}
 
 fn main() {
     let mut game = Game::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0").unwrap();
