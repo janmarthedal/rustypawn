@@ -55,7 +55,7 @@ impl ThinkInfo for Comms {
 
 fn main() {
     let mut game = Game::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0").unwrap();
-    let mut comms = Comms::new("comms.txt");
+    let mut comms = Comms::new("/tmp/rustypawn-0.4.log");
 
     println!("Rustypawn");
     println!("  quiesce: {}", if cfg!(noquiesce) { "no" } else { "yes"});
