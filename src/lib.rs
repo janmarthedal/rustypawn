@@ -180,7 +180,7 @@ const FLIP: [usize; 64] = [
 	  0,   1,   2,   3,   4,   5,   6,   7
 ];
 
-#[derive(Eq)]
+/*#[derive(Eq)]
 pub struct MoveScore {
     score: usize,
     index: usize,
@@ -202,7 +202,7 @@ impl PartialEq for MoveScore {
     fn eq(&self, other: &MoveScore) -> bool {
         self.score == other.score
     }
-}
+}*/
 
 pub fn algebraic_to_pos(s: &str) -> Option<usize> {
     let mut iter = s.chars();
@@ -872,15 +872,13 @@ impl Game {
         }
     }
 
-    pub fn score_moves(self: &Game, move_list: &Vec<Move>, cutoff_moves: &[usize; 64 * 64], top_move: Move) -> Vec<MoveScore> {
-        let mut ms: Vec<MoveScore> = Vec::with_capacity(move_list.capacity());
-
-        for (index, mv) in move_list.iter().enumerate() {
-            let score = if *mv == top_move {
+    pub fn score_moves(self: &Game, move_list: &mut Vec<Move>, cutoff_moves: &[usize; 64 * 64], top_move: Move) {
+        for mv in move_list.iter_mut() {
+            let score = if *mv & 0xffffffff == top_move & 0xffffffff {
                 1000000000
             } else {
-                let from = (mv & 0xff) as usize;
-                let to = ((mv >> 8) & 0xffu64) as usize;
+                let from = (*mv & 0xff) as usize;
+                let to = ((*mv >> 8) & 0xffu64) as usize;
                 let captured = self.board[to] & PIECE_MASK;
                 if captured != EMPTY {
                     let piece = self.board[from] & PIECE_MASK;
@@ -889,10 +887,8 @@ impl Game {
                     cutoff_moves[REV8X8[from] * 64 + REV8X8[to]]
                 }
             };
-            ms.push(MoveScore { score, index });
+            *mv = (score as u64) << 32 | (*mv & 0xffffffff);
         }
-
-        ms
     }
 
     pub fn evaluate(self: &Game) -> isize {
@@ -1102,15 +1098,15 @@ impl<'a, T: ThinkInfo> Search<'a, T> {
             alpha = score;
         }
 
-        let moves = self.game.capture_moves();
+        let mut moves = self.game.capture_moves();
         let mut follow_pv = follow_pv && ply < self.pv[0].len();
-        let mut moves_scored = self.game.score_moves(&moves, &self.cutoff_moves, if follow_pv { self.pv[0][ply] } else { DUMMY_MOVE });
+        self.game.score_moves(&mut moves, &self.cutoff_moves, if follow_pv { self.pv[0][ply] } else { DUMMY_MOVE });
 
-        moves_scored.sort_unstable();
+        // moves.sort_unstable_by(|a, b| ((b >> 32) as u64).cmp(&((a >> 32) as u64)));
+        // moves.sort_unstable_by(|a, b| b.cmp(a));
+        moves.sort_unstable_by(|a, b| if *b < *a { Ordering::Less } else { Ordering::Greater });
 
-        for MoveScore { score: _, index } in moves_scored {
-            let mv = moves[index];
-
+        for mv in moves {
             if !self.game.make_move(mv) {
                 continue;
             }
@@ -1170,7 +1166,7 @@ impl<'a, T: ThinkInfo> Search<'a, T> {
             return self.game.evaluate();
         }
 
-        let moves = self.game.generate_moves();
+        let mut moves = self.game.generate_moves();
         let mut any_legal_moves = false;
         let mut alpha = alpha;
         let mut depth = depth;
@@ -1181,12 +1177,13 @@ impl<'a, T: ThinkInfo> Search<'a, T> {
         }
 
         let mut follow_pv = follow_pv && ply < self.pv[0].len();
-        let mut moves_scored = self.game.score_moves(&moves, &self.cutoff_moves, if follow_pv { self.pv[0][ply] } else { DUMMY_MOVE });
+        self.game.score_moves(&mut moves, &self.cutoff_moves, if follow_pv { self.pv[0][ply] } else { DUMMY_MOVE });
 
-        moves_scored.sort_unstable();
+        // moves.sort_unstable_by(|a, b| ((b >> 32) as u64).cmp(&((a >> 32) as u64)));
+        // moves.sort_unstable_by(|a, b| b.cmp(a));
+        moves.sort_unstable_by(|a, b| if *b < *a { Ordering::Less } else { Ordering::Greater });
 
-        for MoveScore { score: _, index } in moves_scored {
-            let mv = moves[index];
+        for mv in moves {
 
             if !self.game.make_move(mv) {
                 continue;
