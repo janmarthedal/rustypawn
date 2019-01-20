@@ -1,6 +1,6 @@
 [package]
 name = "rustypawn"
-version = "0.4.0"
+version = "0.5.0"
 authors = ["Jan Marthedal Rasmussen <jan@janmr.com>"]
 edition = "2018"
 

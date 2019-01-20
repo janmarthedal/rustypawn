@@ -1,2 +1,3 @@
-tag  perft    think
-0.4  -, 4477  3178
+tag  perft  think
+0.4  4477   -, 3178
+0.5  4665   1645, 3161
