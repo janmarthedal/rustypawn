@@ -1,7 +1,5 @@
 use rand::prelude::*;
 use std::time::Instant;
-use std::cmp::Ordering;
-use std::cmp;
 
 const EMPTY: usize = 0;
 const PAWN: usize = 1;
@@ -873,12 +871,14 @@ impl Game {
     }
 
     pub fn score_moves(self: &Game, move_list: &mut Vec<Move>, cutoff_moves: &[usize; 64 * 64], top_move: Move) {
+        let tm = top_move & 0xffffffff;
         for mv in move_list.iter_mut() {
-            let score = if *mv & 0xffffffff == top_move & 0xffffffff {
+            let m = *mv & 0xffffffff;
+            let score: usize = if m == tm {
                 1000000000
             } else {
-                let from = (*mv & 0xff) as usize;
-                let to = ((*mv >> 8) & 0xffu64) as usize;
+                let from = (m & 0xff) as usize;
+                let to = ((m >> 8) & 0xff) as usize;
                 let captured = self.board[to] & PIECE_MASK;
                 if captured != EMPTY {
                     let piece = self.board[from] & PIECE_MASK;
@@ -887,7 +887,7 @@ impl Game {
                     cutoff_moves[REV8X8[from] * 64 + REV8X8[to]]
                 }
             };
-            *mv = (score as u64) << 32 | (*mv & 0xffffffff);
+            *mv = (score as u64) << 32 | m;
         }
     }
 
@@ -906,7 +906,7 @@ impl Game {
                 WHITE_PAWN => {
                     white_pawn_mat += PAWN_VALUE;
                     let f = pos % 10;
-                    white_pawn_rank[f] = cmp::max(white_pawn_rank[f], i / 8);
+                    white_pawn_rank[f] = std::cmp::max(white_pawn_rank[f], i / 8);
                 },
                 WHITE_BISHOP => {
                     white_piece_mat += BISHOP_VALUE;
@@ -923,7 +923,7 @@ impl Game {
                 BLACK_PAWN => {
                     black_pawn_mat += PAWN_VALUE;
                     let f = pos % 10;
-                    black_pawn_rank[f] = cmp::min(black_pawn_rank[f], i / 8);
+                    black_pawn_rank[f] = std::cmp::min(black_pawn_rank[f], i / 8);
                 },
                 BLACK_BISHOP => {
                     black_piece_mat += BISHOP_VALUE;
@@ -1084,13 +1084,12 @@ impl<'a, T: ThinkInfo> Search<'a, T> {
             return 0;  // return value will be ignored
         }
 
-        if ply == MAX_DEPTH {
-            return self.game.evaluate();
-        }
-
         let mut score = self.game.evaluate();
         let mut alpha = alpha;
 
+        if ply == MAX_DEPTH - 1 {
+            return score;
+        }
         if score >= beta {
             return beta;
         }
@@ -1102,9 +1101,7 @@ impl<'a, T: ThinkInfo> Search<'a, T> {
         let mut follow_pv = follow_pv && ply < self.pv[0].len();
         self.game.score_moves(&mut moves, &self.cutoff_moves, if follow_pv { self.pv[0][ply] } else { DUMMY_MOVE });
 
-        // moves.sort_unstable_by(|a, b| ((b >> 32) as u64).cmp(&((a >> 32) as u64)));
-        // moves.sort_unstable_by(|a, b| b.cmp(a));
-        moves.sort_unstable_by(|a, b| if *b < *a { Ordering::Less } else { Ordering::Greater });
+        moves.sort_unstable_by(|a, b| (*b >> 32).cmp(&(*a >> 32)));
 
         for mv in moves {
             if !self.game.make_move(mv) {
@@ -1179,9 +1176,7 @@ impl<'a, T: ThinkInfo> Search<'a, T> {
         let mut follow_pv = follow_pv && ply < self.pv[0].len();
         self.game.score_moves(&mut moves, &self.cutoff_moves, if follow_pv { self.pv[0][ply] } else { DUMMY_MOVE });
 
-        // moves.sort_unstable_by(|a, b| ((b >> 32) as u64).cmp(&((a >> 32) as u64)));
-        // moves.sort_unstable_by(|a, b| b.cmp(a));
-        moves.sort_unstable_by(|a, b| if *b < *a { Ordering::Less } else { Ordering::Greater });
+        moves.sort_unstable_by(|a, b| (*b >> 32).cmp(&(*a >> 32)));
 
         for mv in moves {
 
