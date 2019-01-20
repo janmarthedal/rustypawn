@@ -54,12 +54,32 @@ pub type Move = u64;   // promoted << 16 | to << 8 | from
 const DUMMY_MOVE: Move = 0;  // non-existent move
 
 pub trait MoveTrait {
+    fn new_basic(from: usize, to: usize) -> Move;
+    fn new_promotion(from: usize, to: usize, promotion: usize) -> Move;
+    fn from(self) -> usize;
+    fn to(self) -> usize;
+    fn promotion(self) -> usize;
     fn to_algebraic(self) -> String;
 }
 
 impl MoveTrait for Move {
+    fn new_basic(from: usize, to: usize) -> Move {
+        (to << 8 | from) as Move
+    }
+    fn new_promotion(from: usize, to: usize, promotion: usize) -> Move {
+        (promotion << 16 | to << 8 | from) as Move
+    }
+    fn from(self) -> usize {
+        (self & 0xff) as usize
+    }
+    fn to(self) -> usize {
+        ((self >> 8) & 0xff) as usize
+    }
+    fn promotion(self) -> usize {
+        ((self >> 16) & 0xff) as usize
+    }
     fn to_algebraic(self) -> String {
-        let promotion = match ((self >> 16) & 0xff) as usize {
+        let promotion = match self.promotion() {
             EMPTY => "",
             BISHOP => "b",
             KNIGHT => "n",
@@ -67,8 +87,7 @@ impl MoveTrait for Move {
             QUEEN => "q",
             _ => panic!("to_algebraic")
         };
-        format!("{}{}{}", pos_to_algebraic((self & 0xff) as usize),
-                pos_to_algebraic(((self >> 8) & 0xff) as usize), promotion)
+        format!("{}{}{}", pos_to_algebraic(self.from()), pos_to_algebraic(self.to()), promotion)
     }
 }
 
@@ -178,30 +197,6 @@ const FLIP: [usize; 64] = [
 	  0,   1,   2,   3,   4,   5,   6,   7
 ];
 
-/*#[derive(Eq)]
-pub struct MoveScore {
-    score: usize,
-    index: usize,
-}
-
-impl Ord for MoveScore {
-    fn cmp(&self, other: &MoveScore) -> Ordering {
-        self.score.cmp(&other.score).reverse()
-    }
-}
-
-impl PartialOrd for MoveScore {
-    fn partial_cmp(&self, other: &MoveScore) -> Option<Ordering> {
-        Some(self.cmp(&other))
-    }
-}
-
-impl PartialEq for MoveScore {
-    fn eq(&self, other: &MoveScore) -> bool {
-        self.score == other.score
-    }
-}*/
-
 pub fn algebraic_to_pos(s: &str) -> Option<usize> {
     let mut iter = s.chars();
     let c = match iter.next() {
@@ -234,29 +229,29 @@ pub fn algebraic_to_pos(s: &str) -> Option<usize> {
 }
 
 pub fn algebraic_to_move(s: &str) -> Move {
-    let from = algebraic_to_pos(&s[0..2]).unwrap();
-    let to = algebraic_to_pos(&s[2..4]).unwrap();
-    let promoted = match &s[4..] {
-        "b" => BISHOP,
-        "n" => KNIGHT,
-        "r" => ROOK,
-        "q" => QUEEN,
-        "" => EMPTY,
-        _ => panic!("algebraic_to_move: illegal promotion")
-    };
-
-    (promoted << 16 | MAP8X8[to] << 8 | MAP8X8[from]) as Move
+    Move::new_promotion(
+        algebraic_to_pos(&s[0..2]).unwrap(),
+        algebraic_to_pos(&s[2..4]).unwrap(),
+        match &s[4..] {
+            "b" => BISHOP,
+            "n" => KNIGHT,
+            "r" => ROOK,
+            "q" => QUEEN,
+            "" => EMPTY,
+            _ => panic!("algebraic_to_move: illegal promotion")
+        }
+    )
 }
 
 fn add_move(move_list: &mut Vec<Move>, from: usize, to: usize) {
-    move_list.push((to << 8 | from) as Move);
+    move_list.push(Move::new_basic(from, to));
 }
 
 fn add_promotion(move_list: &mut Vec<Move>, from: usize, to: usize) {
-    move_list.push((BISHOP << 16 | to << 8 | from) as Move);
-    move_list.push((KNIGHT << 16 | to << 8 | from) as Move);
-    move_list.push((ROOK << 16 | to << 8 | from) as Move);
-    move_list.push((QUEEN << 16 | to << 8 | from) as Move);
+    move_list.push(Move::new_promotion(from, to, BISHOP));
+    move_list.push(Move::new_promotion(from, to, KNIGHT));
+    move_list.push(Move::new_promotion(from, to, ROOK));
+    move_list.push(Move::new_promotion(from, to, QUEEN));
 }
 
 const DOUBLED_PAWN_PENALTY: isize = 10;
@@ -755,9 +750,9 @@ impl Game {
     }
 
     pub fn make_move(self: &mut Game, mv: Move) -> bool {
-        let from = (mv & 0xff) as usize;
-        let to = ((mv >> 8) & 0xff) as usize;
-        let promoted = ((mv >> 16) & 0xff) as usize;
+        let from = mv.from();
+        let to = mv.to();
+        let promoted = mv.promotion();
         let piece = self.board[from];
         let captured = self.board[to];
         let from_state = self.state;
@@ -829,9 +824,9 @@ impl Game {
     pub fn unmake_move(self: &mut Game, mv: Move) {
         let HistoryItem { unmove, hash } = self.history.pop().unwrap();
 
-        let from = (mv & 0xff) as usize;
-        let to = ((mv >> 8) & 0xff) as usize;
-        let promoted = ((mv >> 16) & 0xff) as usize;
+        let from = mv.from();
+        let to = mv.to();
+        let promoted = mv.promotion();
         let captured = ((unmove >> 32) & 0xff) as usize;
         self.state = (unmove & 0xffffffff) as usize;
         let side = self.state & 0xff;
@@ -1199,7 +1194,7 @@ impl<'a, T: ThinkInfo> Search<'a, T> {
             if score > alpha {
                 alpha = score;
 
-                self.cutoff_moves[REV8X8[(mv & 0xff) as usize] * 64 + REV8X8[((mv >> 8) & 0xff) as usize]] += MAX_DEPTH - ply;
+                self.cutoff_moves[REV8X8[mv.from()] * 64 + REV8X8[mv.to()]] += MAX_DEPTH - ply;
 
                 self.tmp_pv.push(mv);
                 self.tmp_pv.append(&mut self.pv[ply + 1]);
