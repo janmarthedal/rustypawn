@@ -91,6 +91,22 @@ impl MoveTrait for Move {
     }
 }
 
+type State = usize;
+
+trait StateTrait {
+    fn draw_ply(self) -> usize;
+    fn ep(self) -> usize;
+}
+
+impl StateTrait for State {
+    fn draw_ply(self) -> usize {
+        (self >> 24) & 127
+    }
+    fn ep(self) -> usize {
+        (self >> 16) & 127
+    }
+}
+
 struct HistoryItem {
     unmove: u64,  // captured << 32 | state
     hash: u64,
@@ -98,7 +114,7 @@ struct HistoryItem {
 
 pub struct Game {
     board: [usize; 120],
-    state: usize,  // draw_ply << 24 | ep << 16 | castling << 8 | turn
+    state: State,  // draw_ply << 24 | ep << 16 | castling << 8 | turn
     king_white: usize,
     king_black: usize,
     piece_hashes: [u64; 12 * 64],
@@ -230,8 +246,8 @@ pub fn algebraic_to_pos(s: &str) -> Option<usize> {
 
 pub fn algebraic_to_move(s: &str) -> Move {
     Move::new_promotion(
-        algebraic_to_pos(&s[0..2]).unwrap(),
-        algebraic_to_pos(&s[2..4]).unwrap(),
+        MAP8X8[algebraic_to_pos(&s[0..2]).unwrap()],
+        MAP8X8[algebraic_to_pos(&s[2..4]).unwrap()],
         match &s[4..] {
             "b" => BISHOP,
             "n" => KNIGHT,
@@ -443,7 +459,7 @@ impl Game {
             hash ^= self.black_hash;
         }
         hash ^= self.castling_hashes[(self.state >> 8) & 15];
-        let ep = (self.state >> 16) & 0xff;
+        let ep = self.state.ep();
         if ep != 0 {
             hash ^= self.ep_hashes[(ep % 10) - 1];
         }
@@ -504,7 +520,7 @@ impl Game {
         let side = self.state & 0xff;
         let xside = if side == WHITE { BLACK } else { WHITE };
         let castling = (self.state >> 8) & 0xff;
-        let ep = (self.state >> 16) & 0xff;
+        let ep = self.state.ep();
 
         let mut move_list = Vec::with_capacity(218);
         for i in 0..64 {
@@ -651,7 +667,7 @@ impl Game {
     pub fn capture_moves(self: &Game) -> Vec<Move> {
         let side = self.state & 0xff;
         let xside = if side == WHITE { BLACK } else { WHITE };
-        let ep = (self.state >> 16) & 0xff;
+        let ep = self.state.ep();
 
         let mut move_list = Vec::with_capacity(218);
         for i in 0..64 {
@@ -756,9 +772,9 @@ impl Game {
         let piece = self.board[from];
         let captured = self.board[to];
         let from_state = self.state;
-        let from_ep = (from_state >> 16) & 0xff;
+        let from_ep = from_state.ep();
         let mut to_ep = 0;
-        let from_draw_ply = (from_state >> 24) & 0xff;
+        let from_draw_ply = from_state.draw_ply();
         let mut to_draw_ply = if captured == EMPTY { from_draw_ply + 1 } else { 0 };
         let from_castling = (from_state >> 8) & 0xff;
         let to_castling = from_castling & CASTLE_MASK[from] & CASTLE_MASK[to];
@@ -1008,13 +1024,13 @@ impl Game {
     }
 
     pub fn fifty_move_draw(self: &Game) -> bool {
-        (self.state >> 24) & 127 >= 100
+        self.state.draw_ply() >= 100
     }
 
     pub fn repetitions(self: &Game) -> usize {
         let mut reps = 0;
         let length = self.history.len();
-        let fifty = (self.state >> 24) & 127;
+        let fifty = self.state.draw_ply();
         if fifty > length {
             return 0;
         }
