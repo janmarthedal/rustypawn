@@ -1146,10 +1146,8 @@ impl<'a, T: ThinkInfo> Search<'a, T> {
 
     pub fn search(self: &mut Search<'a, T>, alpha: isize, beta: isize,
                   ply: usize, depth: usize, follow_pv: bool) -> isize {
-        if cfg!(not(noquiesce)) {
-            if ply >= depth {
-                return self.quiesce(alpha, beta, ply, follow_pv);
-            }
+        if ply >= depth {
+            return self.quiesce(alpha, beta, ply, follow_pv);
         }
 
         self.nodes += 1;
@@ -1165,11 +1163,6 @@ impl<'a, T: ThinkInfo> Search<'a, T> {
             return 0;
         }
 
-        if cfg!(noquiesce) {
-            if ply >= depth {
-                return self.game.evaluate();
-            }
-        }
         if ply == MAX_DEPTH - 1 {
             return self.game.evaluate();
         }

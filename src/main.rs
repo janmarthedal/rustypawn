@@ -67,7 +67,6 @@ fn main() {
     // let mut comms = Comms::new("/tmp/rustypawn-0.4.log");
 
     println!("Rustypawn");
-    println!("  quiesce: {}", if cfg!(noquiesce) { "no" } else { "yes"});
 
     loop {
         let mut input = String::new();
