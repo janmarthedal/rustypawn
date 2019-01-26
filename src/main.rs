@@ -10,19 +10,27 @@ use rustypawn::make_move_algebraic;
 use rustypawn::think;
 
 struct Comms {
-    file: File
+    file: Option<File>
 }
 
 impl Comms {
-    pub fn new(name: &str) -> Comms {
+    pub fn new(name: Option<&str>) -> Comms {
         Comms {
-            file: File::create(name).unwrap()
+            file: match name {
+                Some(n) => Some(File::create(n).unwrap()),
+                None => None
+            }
         }
     }
     fn write(self: &mut Comms, prefix: &str, msg: &str) {
-        self.file.write_all(prefix.as_bytes()).unwrap();
-        self.file.write_all(msg.as_bytes()).unwrap();
-        self.file.write_all(b"\n").unwrap();
+        match &mut self.file {
+            Some(f) => {
+                f.write_all(prefix.as_bytes()).unwrap();
+                f.write_all(msg.as_bytes()).unwrap();
+                f.write_all(b"\n").unwrap();
+            },
+            None => {}
+        }
     }
     pub fn input(self: &mut Comms, msg: &str) {
         self.write("> ", msg);
@@ -55,7 +63,8 @@ impl ThinkInfo for Comms {
 
 fn main() {
     let mut game = Game::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0").unwrap();
-    let mut comms = Comms::new("/tmp/rustypawn-0.4.log");
+    let mut comms = Comms::new(None);
+    // let mut comms = Comms::new("/tmp/rustypawn-0.4.log");
 
     println!("Rustypawn");
     println!("  quiesce: {}", if cfg!(noquiesce) { "no" } else { "yes"});
