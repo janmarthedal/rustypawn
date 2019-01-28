@@ -22,13 +22,13 @@ const WHITE_BISHOP: usize = WHITE | BISHOP;
 const WHITE_KNIGHT: usize = WHITE | KNIGHT;
 const WHITE_ROOK: usize = WHITE | ROOK;
 const WHITE_QUEEN: usize = WHITE | QUEEN;
-// const WHITE_KING: usize = WHITE | KING;
+const WHITE_KING: usize = WHITE | KING;
 const BLACK_PAWN: usize = BLACK | PAWN;
 const BLACK_BISHOP: usize = BLACK | BISHOP;
 const BLACK_KNIGHT: usize = BLACK | KNIGHT;
 const BLACK_ROOK: usize = BLACK | ROOK;
 const BLACK_QUEEN: usize = BLACK | QUEEN;
-// const BLACK_KING: usize = BLACK | KING;
+const BLACK_KING: usize = BLACK | KING;
 
 const CASTLE_MASK: [usize; 120] = [
     0,  0,  0,  0,  0,  0,  0,  0,  0, 0,
@@ -202,6 +202,28 @@ const KNIGHT_PCSQ: [isize; 64] = [
 	-10, -30, -10, -10, -10, -10, -30, -10
 ];
 
+const KING_PCSQ: [isize; 64] = [
+	-40, -40, -40, -40, -40, -40, -40, -40,
+	-40, -40, -40, -40, -40, -40, -40, -40,
+	-40, -40, -40, -40, -40, -40, -40, -40,
+	-40, -40, -40, -40, -40, -40, -40, -40,
+	-40, -40, -40, -40, -40, -40, -40, -40,
+	-40, -40, -40, -40, -40, -40, -40, -40,
+	-20, -20, -20, -20, -20, -20, -20, -20,
+	  0,  20,  40, -20,   0, -20,  40,  20
+];
+
+const KING_ENDGAME_PCSQ: [isize; 64] = [
+	  0,  10,  20,  30,  30,  20,  10,   0,
+	 10,  20,  30,  40,  40,  30,  20,  10,
+	 20,  30,  40,  50,  50,  40,  30,  20,
+	 30,  40,  50,  60,  60,  50,  40,  30,
+	 30,  40,  50,  60,  60,  50,  40,  30,
+	 20,  30,  40,  50,  50,  40,  30,  20,
+	 10,  20,  30,  40,  40,  30,  20,  10,
+	  0,  10,  20,  30,  30,  20,  10,   0
+];
+
 const FLIP: [usize; 64] = [
 	 56,  57,  58,  59,  60,  61,  62,  63,
 	 48,  49,  50,  51,  52,  53,  54,  55,
@@ -320,6 +342,92 @@ fn evaluate_black_pawn(i: usize, white_pawn_rank: &[usize; 10], black_pawn_rank:
     }
 
     s
+}
+
+fn eval_wkp(f: usize, white_pawn_rank: &[usize; 10], black_pawn_rank: &[usize; 10]) -> isize {
+	let mut r: isize = 0;
+
+    match white_pawn_rank[f] {
+        6 => {},
+        5 => { r -= 10; },
+        0 => { r -= 25; },
+        _ => { r -= 20; }
+    };
+
+    match black_pawn_rank[f] {
+        7 => { r -= 15; },
+        5 => { r -= 10; },
+	    4 => { r -= 5; },
+        _ => {}
+    };
+
+	return r;
+}
+
+fn evaluate_white_king(i: usize, white_pawn_rank: &[usize; 10], black_pawn_rank: &[usize; 10]) -> isize {
+    let c = i & 7;
+    let mut r = KING_PCSQ[i];
+
+    if c < 3 {
+        r += eval_wkp(1, white_pawn_rank, black_pawn_rank);
+        r += eval_wkp(2, white_pawn_rank, black_pawn_rank);
+        r += eval_wkp(3, white_pawn_rank, black_pawn_rank) / 2;
+    } else if c > 4 {
+        r += eval_wkp(8, white_pawn_rank, black_pawn_rank);
+        r += eval_wkp(7, white_pawn_rank, black_pawn_rank);
+        r += eval_wkp(6, white_pawn_rank, black_pawn_rank) / 2;
+    } else {
+        for i in c..c + 3 {
+            if white_pawn_rank[i] == 0 && black_pawn_rank[i] == 0 {
+                r -= 10;
+            }
+        }
+    }
+
+    return r;
+}
+
+fn eval_bkp(f: usize, white_pawn_rank: &[usize; 10], black_pawn_rank: &[usize; 10]) -> isize {
+	let mut r: isize = 0;
+
+    match black_pawn_rank[f] {
+        1 => {},
+        2 => { r -= 10; },
+        7 => { r -= 25; },
+        _ => { r -= 20; }
+    };
+
+    match white_pawn_rank[f] {
+        0 => { r -= 15; },
+        2 => { r -= 10; },
+	    3 => { r -= 5; },
+        _ => {}
+    };
+
+	return r;
+}
+
+fn evaluate_black_king(i: usize, white_pawn_rank: &[usize; 10], black_pawn_rank: &[usize; 10]) -> isize {
+    let c = i & 7;
+    let mut r = KING_PCSQ[FLIP[i]];
+
+    if c < 3 {
+        r += eval_bkp(1, white_pawn_rank, black_pawn_rank);
+        r += eval_bkp(2, white_pawn_rank, black_pawn_rank);
+        r += eval_bkp(3, white_pawn_rank, black_pawn_rank) / 2;
+    } else if c > 4 {
+        r += eval_bkp(8, white_pawn_rank, black_pawn_rank);
+        r += eval_bkp(7, white_pawn_rank, black_pawn_rank);
+        r += eval_bkp(6, white_pawn_rank, black_pawn_rank) / 2;
+    } else {
+        for i in c..c + 3 {
+            if white_pawn_rank[i] == 0 && black_pawn_rank[i] == 0 {
+                r -= 10;
+            }
+        }
+    }
+
+    return r;
 }
 
 impl Game {
@@ -979,6 +1087,13 @@ impl Game {
                         white_score += ROOK_ON_SEVENTH_BONUS;
                     }
                 },
+                WHITE_KING => {
+                    if black_piece_mat <= 1200 {
+                        white_score += KING_ENDGAME_PCSQ[i];
+                    } else {
+                        white_score += evaluate_white_king(i, &white_pawn_rank, &black_pawn_rank) * black_piece_mat / 3100;
+                    }
+                },
                 BLACK_PAWN => {
                     black_score += evaluate_black_pawn(i, &white_pawn_rank, &black_pawn_rank);
                 },
@@ -998,6 +1113,13 @@ impl Game {
                     }
                     if i / 8 == 6 {
                         black_score += ROOK_ON_SEVENTH_BONUS;
+                    }
+                },
+                BLACK_KING => {
+                    if white_piece_mat <= 1200 {
+                        black_score += KING_ENDGAME_PCSQ[FLIP[i]];
+                    } else {
+                        black_score += evaluate_black_king(i, &white_pawn_rank, &black_pawn_rank) * white_piece_mat / 3100;
                     }
                 },
                 _ => continue
