@@ -162,10 +162,10 @@ const KNIGHT_MOVEMENTS: [isize; 8] = [-21, -19, -12, -8, 8, 12, 19, 21];
 const ROOK_MOVEMENTS: [isize; 4] = [-1, 1, -10, 10];
 const KING_MOVEMENTS: [isize; 8] = [-1, 1, -10, 10, -11, -9, 9, 11];
 const PAWN_VALUE: isize = 100;
-const BISHOP_VALUE: isize = 325;
-const KNIGHT_VALUE: isize = 325;
-const ROOK_VALUE: isize = 500;
-const QUEEN_VALUE: isize = 1050;
+const KNIGHT_VALUE: isize = 300;
+const BISHOP_VALUE: isize = 315;
+const ROOK_VALUE: isize = 457;
+const QUEEN_VALUE: isize = 842;
 pub const MAX_DEPTH: usize = 32;
 const MATE_VALUE: isize = 100000;
 
@@ -1084,7 +1084,7 @@ impl Game {
                     }
                 },
                 WHITE_KING => {
-                    if black_piece_mat <= 1250 {
+                    if black_piece_mat <= 1200 {
                         white_score += KING_ENDGAME_PCSQ[i];
                     } else {
                         white_score += evaluate_white_king(i, &white_pawn_rank, &black_pawn_rank)
@@ -1110,7 +1110,7 @@ impl Game {
                     }
                 },
                 BLACK_KING => {
-                    if white_piece_mat <= 1250 {
+                    if white_piece_mat <= 1200 {
                         black_score += KING_ENDGAME_PCSQ[FLIP[i]];
                     } else {
                         black_score += evaluate_black_king(i, &white_pawn_rank, &black_pawn_rank)
