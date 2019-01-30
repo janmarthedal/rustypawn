@@ -162,10 +162,10 @@ const KNIGHT_MOVEMENTS: [isize; 8] = [-21, -19, -12, -8, 8, 12, 19, 21];
 const ROOK_MOVEMENTS: [isize; 4] = [-1, 1, -10, 10];
 const KING_MOVEMENTS: [isize; 8] = [-1, 1, -10, 10, -11, -9, 9, 11];
 const PAWN_VALUE: isize = 100;
-const BISHOP_VALUE: isize = 300;
-const KNIGHT_VALUE: isize = 300;
+const BISHOP_VALUE: isize = 325;
+const KNIGHT_VALUE: isize = 325;
 const ROOK_VALUE: isize = 500;
-const QUEEN_VALUE: isize = 900;
+const QUEEN_VALUE: isize = 1050;
 pub const MAX_DEPTH: usize = 32;
 const MATE_VALUE: isize = 100000;
 
@@ -298,7 +298,6 @@ const BACKWARDS_PAWN_PENALTY: isize = 8;
 const PASSED_PAWN_BONUS: isize = 20;
 const ROOK_SEMI_OPEN_FILE_BONUS: isize = 10;
 const ROOK_OPEN_FILE_BONUS: isize = 15;
-const ROOK_ON_SEVENTH_BONUS: isize = 20;
 
 fn evaluate_white_pawn(i: usize, white_pawn_rank: &[usize; 10], black_pawn_rank: &[usize; 10]) -> isize {
     let f = i % 8 + 1;
@@ -1083,15 +1082,13 @@ impl Game {
                             ROOK_SEMI_OPEN_FILE_BONUS
                         }
                     }
-                    if i / 8 == 1 {
-                        white_score += ROOK_ON_SEVENTH_BONUS;
-                    }
                 },
                 WHITE_KING => {
-                    if black_piece_mat <= 1200 {
+                    if black_piece_mat <= 1250 {
                         white_score += KING_ENDGAME_PCSQ[i];
                     } else {
-                        white_score += evaluate_white_king(i, &white_pawn_rank, &black_pawn_rank) * black_piece_mat / 3100;
+                        white_score += evaluate_white_king(i, &white_pawn_rank, &black_pawn_rank)
+                                       * black_piece_mat / (2 * KNIGHT_VALUE + 2 * BISHOP_VALUE + 2 * ROOK_VALUE + QUEEN_VALUE);
                     }
                 },
                 BLACK_PAWN => {
@@ -1111,15 +1108,13 @@ impl Game {
                             ROOK_SEMI_OPEN_FILE_BONUS
                         }
                     }
-                    if i / 8 == 6 {
-                        black_score += ROOK_ON_SEVENTH_BONUS;
-                    }
                 },
                 BLACK_KING => {
-                    if white_piece_mat <= 1200 {
+                    if white_piece_mat <= 1250 {
                         black_score += KING_ENDGAME_PCSQ[FLIP[i]];
                     } else {
-                        black_score += evaluate_black_king(i, &white_pawn_rank, &black_pawn_rank) * white_piece_mat / 3100;
+                        black_score += evaluate_black_king(i, &white_pawn_rank, &black_pawn_rank)
+                                       * white_piece_mat / (2 * KNIGHT_VALUE + 2 * BISHOP_VALUE + 2 * ROOK_VALUE + QUEEN_VALUE);
                     }
                 },
                 _ => continue

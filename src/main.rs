@@ -54,9 +54,9 @@ impl Comms {
 impl ThinkInfo for Comms {
     fn think_info(self: &mut Comms, depth: usize, score: isize, mate_in: isize, node_count: usize, millis: u64, moves: &Vec<String>) {
         let nps = if millis > 0 { 1000 * node_count as u64 / millis } else { 0 };
-        let mate = if mate_in != 0 { format!(" mate {}", mate_in) } else { String::new() };
-        let msg = format!("info depth {} score cp {}{} nodes {} time {} nps {} pv {}",
-            depth, score, mate, node_count, millis, nps, moves.join(" "));
+        let msg = format!("info depth {} score {} nodes {} time {} nps {} pv {}",
+            depth, if mate_in != 0 { format!("mate {}", mate_in) } else { format!("cp {}", score) },
+            node_count, millis, nps, moves.join(" "));
         self.output(msg);
     }
 }
